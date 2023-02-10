@@ -1,4 +1,3 @@
-use std::marker::{Sized};
 use crate::common::{FrameID, PageID, PAGE_SIZE, INVALID_PAGE_ID};
 
 pub struct Page {
