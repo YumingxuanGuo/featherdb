@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::vec::{Vec};
 use crate::common::{FrameID, PageID};
 use crate::storage::kv::page::{Page};
+use crate::storage::disk::disk_manager::{DiskManager};
 
 use super::lru_k_replacer::{LRUKReplacer};
 
@@ -10,8 +11,8 @@ struct BufferPoolManager {
     pool_size: usize,
     next_page_id: PageID,
 
-    // disk_mamager,
     // log_manager,
+    disk_mamager: DiskManager,
     page_table: HashMap<PageID, FrameID>,
     replacer: LRUKReplacer,
     free_list: LinkedList<FrameID>,
@@ -23,6 +24,7 @@ impl BufferPoolManager {
         let mut this = Self {
             pool_size,
             next_page_id: 0,
+            disk_mamager: DiskManager::new(),
             page_table: HashMap::new(),
             replacer: LRUKReplacer::new(pool_size, replacer_k),
             free_list: LinkedList::new(),
