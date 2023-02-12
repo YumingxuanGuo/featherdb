@@ -128,8 +128,6 @@ impl LRUKReplacer {
     }
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Toggle whether a frame is evictable or non-evictable. This function also
    * controls replacer's size. Note that size is equal to number of evictable entries.
    *
@@ -180,7 +178,50 @@ impl LRUKReplacer {
         panic!("should not reach here: set_evictable()");
     }
 
-    pub fn remove(frame_id: FrameID) {
+  /**
+   * @brief Remove an evictable frame from replacer, along with its access history.
+   * This function should also decrement replacer's size if removal is successful.
+   *
+   * Note that this is different from evicting a frame, which always remove the frame
+   * with largest backward k-distance. This function removes specified frame id,
+   * no matter what its backward k-distance is.
+   *
+   * If Remove is called on a non-evictable frame, throw an exception or abort the
+   * process.
+   *
+   * If specified frame is not found, directly return from this function.
+   *
+   * @param frame_id id of frame to be removed
+   */
+    pub fn remove(&mut self, frame_id: FrameID) {
+        // lock
 
+        if frame_id as usize > self.num_frames {
+            panic!("frame id out of bound");
+        }
+
+        if self.fully_accessed_frames.contains_key(&frame_id) {
+            let frame = self.fully_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            if !frame.evictable {
+                panic!("remove(): cannot remove unevictable frame");
+            }
+            self.fully_accessed_frames.remove(&frame_id);
+            self.cur_size -= 1;
+            // unlock
+            return;
+        }
+
+        if self.partial_accessed_frames.contains_key(&frame_id) {
+            let frame = self.partial_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            if !frame.evictable {
+                panic!("remove(): cannot remove unevictable frame");
+            }
+            self.partial_accessed_frames.remove(&frame_id);
+            self.cur_size -= 1;
+            // unlock
+            return;
+        }
     }
 }
