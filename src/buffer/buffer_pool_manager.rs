@@ -97,7 +97,6 @@ impl BufferPoolManager {
      * In addition, remember to disable eviction and record the access history of the frame like you did for NewPage().
      *
      * @param page_id id of page to be fetched
-     * @param access_type type of access to the page, only needed for leaderboard tests.
      * @return nullptr if page_id cannot be fetched, otherwise pointer to the requested page
      */
     pub fn fetch_page(&mut self, page_id: PageID) -> Option<&mut Page> {
@@ -141,9 +140,37 @@ impl BufferPoolManager {
         return Some(&mut self.pages[frame_id as usize]);
     }
 
-    /// TODO: unimplemented
-    pub fn unpin_page(&self, page_id: PageID, is_dirty: bool) -> bool {
-        return false;
+    /**
+     * @brief Unpin the target page from the buffer pool. If page_id is not in the buffer pool or its pin count is already
+     * 0, return false.
+     *
+     * Decrement the pin count of a page. If the pin count reaches 0, the frame should be evictable by the replacer.
+     * Also, set the dirty flag on the page to indicate if the page was modified.
+     *
+     * @param page_id id of page to be unpinned
+     * @param is_dirty true if the page should be marked as dirty, false otherwise
+     * @return false if the page is not in the page table or its pin count is <= 0 before this call, true otherwise
+     */
+    pub fn unpin_page(&mut self, page_id: PageID, is_dirty: bool) -> bool {
+        let mut frame_id: FrameID = -1;
+
+        if !self.page_table.contains_key(&page_id) {
+            return false;
+        }
+
+        frame_id = self.page_table[&page_id];
+        if self.pages[frame_id as usize].pin_count == 0 {
+            return false;
+        }
+
+        self.pages[frame_id as usize].is_dirty = is_dirty;
+        self.pages[frame_id as usize].pin_count -= 1;
+
+        if self.pages[frame_id as usize].pin_count == 0 {
+            self.replacer.set_evictable(frame_id, true);
+        }
+
+        return true;
     }
 
     /// TODO: unimplemented
