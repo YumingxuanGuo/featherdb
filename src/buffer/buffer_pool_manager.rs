@@ -209,13 +209,46 @@ impl BufferPoolManager {
         }
     }
 
-    /// TODO: unimplemented
-    pub fn delete_page(page_id: PageID) -> bool {
-        return false;
+    /**
+     * @brief Delete a page from the buffer pool. If page_id is not in the buffer pool, do nothing and return true. If the
+     * page is pinned and cannot be deleted, return false immediately.
+     *
+     * After deleting the page from the page table, stop tracking the frame in the replacer and add the frame
+     * back to the free list. Also, reset the page's memory and metadata. Finally, you should call DeallocatePage() to
+     * imitate freeing the page on the disk.
+     *
+     * @param page_id id of page to be deleted
+     * @return false if the page exists but could not be deleted, true if the page didn't exist or deletion succeeded
+     */
+    pub fn delete_page(&mut self, page_id: PageID) -> bool {
+        if !self.page_table.contains_key(&page_id) {
+            return false;
+        }
+
+        let frame_id: FrameID = self.page_table[&page_id];
+        if self.pages[frame_id as usize].pin_count > 0 {
+            return false;
+        }
+
+        self.page_table.remove(&page_id);
+        self.replacer.remove(frame_id);
+        self.free_list.push_back(frame_id);
+        let page = &mut self.pages[frame_id as usize];
+        page.page_id = INVALID_PAGE_ID;
+        page.is_dirty = false;
+        page.pin_count = 0;
+        page.reset_memory();
+        self.deallocate_page();
+
+        return true;
     }
 
     fn allocate_page(&mut self) -> PageID {
         self.next_page_id += 1;
         return self.next_page_id - 1;
+    }
+
+    fn deallocate_page(&mut self) {
+        
     }
 }
