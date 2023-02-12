@@ -224,4 +224,11 @@ impl LRUKReplacer {
             return;
         }
     }
+
+    pub fn size(&self) -> usize {
+        // lock
+        let size = self.cur_size;
+        // unlock
+        return size;
+    }
 }
