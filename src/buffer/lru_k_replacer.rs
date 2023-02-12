@@ -97,8 +97,6 @@ impl LRUKReplacer {
    * also use BUSTUB_ASSERT to abort the process if frame id is invalid.
    *
    * @param frame_id id of frame that received a new access.
-   * @param access_type type of access that was received. This parameter is only needed for
-   * leaderboard tests.
    */
     pub fn record_access(&mut self, frame_id: FrameID) {
         // lock
@@ -129,8 +127,57 @@ impl LRUKReplacer {
         // unlock
     }
 
-    pub fn set_evictable(frame_id: FrameID, mode: bool) {
+  /**
+   * TODO(P1): Add implementation
+   *
+   * @brief Toggle whether a frame is evictable or non-evictable. This function also
+   * controls replacer's size. Note that size is equal to number of evictable entries.
+   *
+   * If a frame was previously evictable and is to be set to non-evictable, then size should
+   * decrement. If a frame was previously non-evictable and is to be set to evictable,
+   * then size should increment.
+   *
+   * If frame id is invalid, throw an exception or abort the process.
+   *
+   * For other scenarios, this function should terminate without modifying anything.
+   *
+   * @param frame_id id of frame whose 'evictable' status will be modified
+   * @param set_evictable whether the given frame is evictable or not
+   */
+    pub fn set_evictable(&mut self, frame_id: FrameID, mode: bool) {
+        // lock
 
+        if frame_id as usize > self.num_frames {
+            panic!("frame id out of bound");
+        }
+
+        if self.fully_accessed_frames.contains_key(&frame_id) {
+            let frame = self.fully_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            if frame.evictable && !mode {
+                self.cur_size -= 1;
+            } else if !frame.evictable && mode {
+                self.cur_size += 1;
+            }
+            frame.evictable = mode;
+            // unlock
+            return;
+        }
+
+        if self.partial_accessed_frames.contains_key(&frame_id) {
+            let frame = self.partial_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            if frame.evictable && !mode {
+                self.cur_size -= 1;
+            } else if !frame.evictable && mode {
+                self.cur_size += 1;
+            }
+            frame.evictable = mode;
+            // unlock
+            return;
+        }
+
+        panic!("should not reach here: set_evictable()");
     }
 
     pub fn remove(frame_id: FrameID) {
