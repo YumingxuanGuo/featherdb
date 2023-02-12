@@ -1,7 +1,5 @@
 use gman_db::{buffer::lru_k_replacer::{LRUKReplacer}, common::FrameID};
 
-
-
 #[test]
 fn test_general_lru() {
     let mut lru_replacer = LRUKReplacer::new(7, 2);

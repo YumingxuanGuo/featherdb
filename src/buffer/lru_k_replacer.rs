@@ -30,20 +30,20 @@ impl LRUKReplacer {
         }
     }
 
-  /**
-   * @brief Find the frame with largest backward k-distance and evict that frame. Only frames
-   * that are marked as 'evictable' are candidates for eviction.
-   *
-   * A frame with less than k historical references is given +inf as its backward k-distance.
-   * If multiple frames have inf backward k-distance, then evict frame with earliest timestamp
-   * based on LRU.
-   *
-   * Successful eviction of a frame should decrement the size of replacer and remove the frame's
-   * access history.
-   *
-   * @param[out] frame_id id of frame that is evicted.
-   * @return true if a frame is evicted successfully, false if no frames can be evicted.
-   */
+    /**
+     * @brief Find the frame with largest backward k-distance and evict that frame. Only frames
+     * that are marked as 'evictable' are candidates for eviction.
+     *
+     * A frame with less than k historical references is given +inf as its backward k-distance.
+     * If multiple frames have inf backward k-distance, then evict frame with earliest timestamp
+     * based on LRU.
+     *
+     * Successful eviction of a frame should decrement the size of replacer and remove the frame's
+     * access history.
+     *
+     * @param[out] frame_id id of frame that is evicted.
+     * @return true if a frame is evicted successfully, false if no frames can be evicted.
+     */
     pub fn evict(&mut self, frame_id: &mut FrameID) -> bool {
         // lock
 
@@ -89,15 +89,15 @@ impl LRUKReplacer {
         return false;
     }
 
-  /**
-   * @brief Record the event that the given frame id is accessed at current timestamp.
-   * Create a new entry for access history if frame id has not been seen before.
-   *
-   * If frame id is invalid (ie. larger than replacer_size_), throw an exception. You can
-   * also use BUSTUB_ASSERT to abort the process if frame id is invalid.
-   *
-   * @param frame_id id of frame that received a new access.
-   */
+    /**
+     * @brief Record the event that the given frame id is accessed at current timestamp.
+     * Create a new entry for access history if frame id has not been seen before.
+     *
+     * If frame id is invalid (ie. larger than replacer_size_), throw an exception. You can
+     * also use BUSTUB_ASSERT to abort the process if frame id is invalid.
+     *
+     * @param frame_id id of frame that received a new access.
+     */
     pub fn record_access(&mut self, frame_id: FrameID) {
         // lock
 
@@ -137,21 +137,21 @@ impl LRUKReplacer {
         // unlock
     }
 
-  /**
-   * @brief Toggle whether a frame is evictable or non-evictable. This function also
-   * controls replacer's size. Note that size is equal to number of evictable entries.
-   *
-   * If a frame was previously evictable and is to be set to non-evictable, then size should
-   * decrement. If a frame was previously non-evictable and is to be set to evictable,
-   * then size should increment.
-   *
-   * If frame id is invalid, throw an exception or abort the process.
-   *
-   * For other scenarios, this function should terminate without modifying anything.
-   *
-   * @param frame_id id of frame whose 'evictable' status will be modified
-   * @param set_evictable whether the given frame is evictable or not
-   */
+    /**
+     * @brief Toggle whether a frame is evictable or non-evictable. This function also
+     * controls replacer's size. Note that size is equal to number of evictable entries.
+     *
+     * If a frame was previously evictable and is to be set to non-evictable, then size should
+     * decrement. If a frame was previously non-evictable and is to be set to evictable,
+     * then size should increment.
+     *
+     * If frame id is invalid, throw an exception or abort the process.
+     *
+     * For other scenarios, this function should terminate without modifying anything.
+     *
+     * @param frame_id id of frame whose 'evictable' status will be modified
+     * @param mode whether the given frame is evictable or not
+     */
     pub fn set_evictable(&mut self, frame_id: FrameID, mode: bool) {
         // lock
 
@@ -188,21 +188,21 @@ impl LRUKReplacer {
         panic!("should not reach here: set_evictable()");
     }
 
-  /**
-   * @brief Remove an evictable frame from replacer, along with its access history.
-   * This function should also decrement replacer's size if removal is successful.
-   *
-   * Note that this is different from evicting a frame, which always remove the frame
-   * with largest backward k-distance. This function removes specified frame id,
-   * no matter what its backward k-distance is.
-   *
-   * If Remove is called on a non-evictable frame, throw an exception or abort the
-   * process.
-   *
-   * If specified frame is not found, directly return from this function.
-   *
-   * @param frame_id id of frame to be removed
-   */
+    /**
+     * @brief Remove an evictable frame from replacer, along with its access history.
+     * This function should also decrement replacer's size if removal is successful.
+     *
+     * Note that this is different from evicting a frame, which always remove the frame
+     * with largest backward k-distance. This function removes specified frame id,
+     * no matter what its backward k-distance is.
+     *
+     * If Remove is called on a non-evictable frame, throw an exception or abort the
+     * process.
+     *
+     * If specified frame is not found, directly return from this function.
+     *
+     * @param frame_id id of frame to be removed
+     */
     pub fn remove(&mut self, frame_id: FrameID) {
         // lock
 
@@ -235,6 +235,11 @@ impl LRUKReplacer {
         }
     }
 
+    /**
+     * @brief Return replacer's size, which tracks the number of evictable frames.
+     *
+     * @return usize
+     */
     pub fn size(&self) -> usize {
         // lock
         let size = self.cur_size;
