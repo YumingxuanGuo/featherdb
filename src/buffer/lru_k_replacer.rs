@@ -49,7 +49,7 @@ impl LRUKReplacer {
 
         if !self.partial_accessed_frames.is_empty() {
             let mut frame_id_to_evict: FrameID = -1;
-            let mut earliest_timestamp: usize = 0;
+            let mut earliest_timestamp: usize = usize::MAX;
             for (id, frame_meta_data) in &self.partial_accessed_frames {
                 if frame_meta_data.evictable && 
                         earliest_timestamp > *frame_meta_data.timestamps.back().expect("linked list back() failed") {
@@ -68,7 +68,7 @@ impl LRUKReplacer {
 
         if !self.fully_accessed_frames.is_empty() {
             let mut frame_id_to_evict: FrameID = -1;
-            let mut earliest_timestamp: usize = 0;
+            let mut earliest_timestamp: usize = usize::MAX;
             for (id, frame_meta_data) in &self.fully_accessed_frames {
                 if frame_meta_data.evictable && 
                         earliest_timestamp > *frame_meta_data.timestamps.back().expect("linked list back() failed") {
@@ -124,6 +124,16 @@ impl LRUKReplacer {
                     self.partial_accessed_frames.remove(&frame_id).expect("remove failed"));
             }
         }
+
+        let mut new_frame = FrameMetaData {
+            access_time: 1,
+            evictable: false,
+            timestamps: LinkedList::new()
+        };
+        new_frame.timestamps.push_front(self.current_timestamp);
+        self.current_timestamp += 1;
+        self.partial_accessed_frames.insert(frame_id, new_frame);
+
         // unlock
     }
 
