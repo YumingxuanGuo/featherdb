@@ -1,7 +1,7 @@
 use std::collections::{HashMap, LinkedList};
 use std::sync::Arc;
 use std::vec::{Vec};
-use crate::common::{FrameID, PageID};
+use crate::common::{FrameID, PageID, INVALID_PAGE_ID};
 use crate::storage::page::page::{Page};
 use crate::storage::disk::disk_manager::{DiskManager};
 
@@ -152,13 +152,11 @@ impl BufferPoolManager {
      * @return false if the page is not in the page table or its pin count is <= 0 before this call, true otherwise
      */
     pub fn unpin_page(&mut self, page_id: PageID, is_dirty: bool) -> bool {
-        let mut frame_id: FrameID = -1;
-
         if !self.page_table.contains_key(&page_id) {
             return false;
         }
 
-        frame_id = self.page_table[&page_id];
+        let frame_id: FrameID = self.page_table[&page_id];
         if self.pages[frame_id as usize].pin_count == 0 {
             return false;
         }
@@ -173,14 +171,42 @@ impl BufferPoolManager {
         return true;
     }
 
-    /// TODO: unimplemented
-    pub fn flush_page(&self, page_id: PageID) -> bool {
-        return false;
+    /**
+     * @brief Flush the target page to disk.
+     *
+     * Use the DiskManager::WritePage() method to flush a page to disk, REGARDLESS of the dirty flag.
+     * Unset the dirty flag of the page after flushing.
+     *
+     * @param page_id id of page to be flushed, cannot be INVALID_PAGE_ID
+     * @return false if the page could not be found in the page table, true otherwise
+     */
+    pub fn flush_page(&mut self, page_id: PageID) -> bool {
+        if !self.page_table.contains_key(&page_id) {
+            return false;
+        }
+
+        let frame_id: FrameID = self.page_table[&page_id];
+        self.disk_mamager.write_page(page_id, &mut self.pages[frame_id as usize].data);
+        self.pages[frame_id as usize].is_dirty = false;
+
+        return true;
     }
 
-    /// TODO: unimplemented
-    pub fn flush_all_pages() {
-
+    /**
+     * @brief Flush all the pages in the buffer pool to disk.
+     */
+    pub fn flush_all_pages(&mut self) {
+        for i in 0..self.pool_size {
+            let page = &mut self.pages[i];
+            if page.page_id != INVALID_PAGE_ID {
+                if !self.page_table.contains_key(&page.page_id) {
+                    continue;
+                }
+                let frame_id: FrameID = self.page_table[&page.page_id];
+                self.disk_mamager.write_page(page.page_id, &mut self.pages[frame_id as usize].data);
+                self.pages[frame_id as usize].is_dirty = false;
+            }
+        }
     }
 
     /// TODO: unimplemented
