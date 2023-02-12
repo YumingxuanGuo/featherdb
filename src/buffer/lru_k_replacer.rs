@@ -89,8 +89,33 @@ impl LRUKReplacer {
         return false;
     }
 
-    pub fn record_access(frame_id: FrameID) {
+    pub fn record_access(&mut self, frame_id: FrameID) {
+        // lock
 
+        if frame_id as usize > self.num_frames {
+            panic!("frame id out of bound");
+        }
+
+        if self.fully_accessed_frames.contains_key(&frame_id) {
+            let frame = self.fully_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            frame.timestamps.pop_back();
+            frame.timestamps.push_front(self.current_timestamp);
+            self.current_timestamp += 1;
+        }
+
+        if self.partial_accessed_frames.contains_key(&frame_id) {
+            let frame = self.partial_accessed_frames.get_mut(&frame_id)
+                    .expect("get_mut failed");
+            self.current_timestamp += 1;
+            frame.timestamps.push_front(self.current_timestamp);
+            frame.access_time += 1;
+            if frame.access_time >= self.k {
+                self.fully_accessed_frames.insert(frame_id,
+                    self.partial_accessed_frames.remove(&frame_id).expect("remove failed"));
+            }
+        }
+        // unlock
     }
 
     pub fn set_evictable(frame_id: FrameID, mode: bool) {
