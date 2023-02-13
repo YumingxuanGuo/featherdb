@@ -1,4 +1,4 @@
-pub mod b_plus_tree;
+pub mod b_plus_tree_page;
 pub mod page;
 
 use std::fmt::Display;

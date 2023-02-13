@@ -1,6 +1,6 @@
 use crate::common::{FrameID, PageID, PAGE_SIZE, INVALID_PAGE_ID};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Page {
     pub data: [u8; PAGE_SIZE],
     pub page_id: PageID,

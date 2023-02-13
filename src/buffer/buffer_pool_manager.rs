@@ -1,5 +1,4 @@
 use std::collections::{HashMap, LinkedList};
-use std::sync::Arc;
 use std::vec::{Vec};
 use crate::common::{FrameID, PageID, INVALID_PAGE_ID};
 use crate::storage::page::page::{Page};
@@ -12,7 +11,7 @@ pub struct BufferPoolManager {
     next_page_id: PageID,
 
     // log_manager,
-    disk_mamager: DiskManager,
+    disk_manager: DiskManager,
     page_table: HashMap<PageID, FrameID>,
     replacer: LRUKReplacer,
     free_list: LinkedList<FrameID>,
@@ -20,11 +19,11 @@ pub struct BufferPoolManager {
 }
 
 impl BufferPoolManager {
-    pub fn new(pool_size: usize, replacer_k: usize) -> Self {
+    pub fn new(pool_size: usize, disk_manager: DiskManager, replacer_k: usize) -> Self {
         let mut this = Self {
             pool_size,
             next_page_id: 0,
-            disk_mamager: DiskManager::new(),
+            disk_manager,
             page_table: HashMap::new(),
             replacer: LRUKReplacer::new(pool_size, replacer_k),
             free_list: LinkedList::new(),
@@ -67,7 +66,7 @@ impl BufferPoolManager {
             }
             let evicted_page = &self.pages[frame_id as usize];
             if evicted_page.is_dirty {
-                self.disk_mamager.write_page(evicted_page.page_id, &evicted_page.data);
+                self.disk_manager.write_page(evicted_page.page_id, &evicted_page.data);
             }
             self.page_table.remove(&evicted_page.page_id);
         }
@@ -84,7 +83,6 @@ impl BufferPoolManager {
         return Some(&mut self.pages[frame_id as usize]);
     }
 
-    /// TODO: unimplemented
     /**
      * @brief Fetch the requested page from the buffer pool. Return nullptr if page_id needs to be fetched from the disk
      * but all frames are currently in use and not evictable (in another word, pinned).
@@ -123,12 +121,12 @@ impl BufferPoolManager {
             }
             let evicted_page = &self.pages[frame_id as usize];
             if evicted_page.is_dirty {
-                self.disk_mamager.write_page(evicted_page.page_id, &evicted_page.data);
+                self.disk_manager.write_page(evicted_page.page_id, &evicted_page.data);
             }
             self.page_table.remove(&evicted_page.page_id);
         }
 
-        self.disk_mamager.read_page(page_id, &mut self.pages[frame_id as usize].data);
+        self.disk_manager.read_page(page_id, &mut self.pages[frame_id as usize].data);
         self.page_table.insert(page_id, frame_id);
 
         self.replacer.record_access(frame_id);
@@ -186,7 +184,7 @@ impl BufferPoolManager {
         }
 
         let frame_id: FrameID = self.page_table[&page_id];
-        self.disk_mamager.write_page(page_id, &mut self.pages[frame_id as usize].data);
+        self.disk_manager.write_page(page_id, &mut self.pages[frame_id as usize].data);
         self.pages[frame_id as usize].is_dirty = false;
 
         return true;
@@ -203,7 +201,7 @@ impl BufferPoolManager {
                     continue;
                 }
                 let frame_id: FrameID = self.page_table[&page.page_id];
-                self.disk_mamager.write_page(page.page_id, &mut self.pages[frame_id as usize].data);
+                self.disk_manager.write_page(page.page_id, &mut self.pages[frame_id as usize].data);
                 self.pages[frame_id as usize].is_dirty = false;
             }
         }
