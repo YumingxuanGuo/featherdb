@@ -4,12 +4,13 @@ use std::fmt::Display;
 use crate::error::Result;
 
 /// A key/value store.
-pub trait Store: Send + Sync {
+// pub trait Store: Send + Sync {
+pub trait Store: {
     /// Gets a value for a key, if it exists.
     fn get_value() -> Result<Option<Vec<u8>>>;
 
     /// Sets the value for a key, replacing existing value if any.
-    fn insert(&self, key: &String, value: &Vec<u8>) -> Result<()>;
+    fn insert(&mut self, key: &String, value: &Vec<u8>) -> Result<()>;
 
     /// Deletes a key, or does nothing if it does not exists.
     fn remove() -> Result<()>;
