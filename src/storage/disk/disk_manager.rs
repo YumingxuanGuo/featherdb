@@ -1,7 +1,7 @@
 use std::fs::{File};
-use std::io::{self, prelude::*, BufReader};
+use std::io::{prelude::*, BufReader};
 
-use crate::common::{FrameID, PageID, PAGE_SIZE};
+use crate::common::{PageID};
 
 pub struct PageFile {  // TODO: temporarily set public for debugging
     pub filename: String,

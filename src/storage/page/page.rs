@@ -1,4 +1,4 @@
-use crate::common::{FrameID, PageID, PAGE_SIZE, INVALID_PAGE_ID};
+use crate::common::{PageID, PAGE_SIZE, INVALID_PAGE_ID};
 
 #[derive(Clone, Debug)]
 pub struct Page {

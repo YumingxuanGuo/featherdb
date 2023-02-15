@@ -1,6 +1,5 @@
 pub mod b_plus_tree;
 
-use std::fmt::Display;
 use crate::{error::Result, common::rid::RID};
 
 type KeyType = i32;

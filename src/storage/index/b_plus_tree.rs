@@ -1,6 +1,8 @@
-use std::{mem};
-
-use crate::{common::{PageID, PAGE_SIZE, INVALID_PAGE_ID, rid::RID}, buffer::buffer_pool_manager::BufferPoolManager, storage::{disk::disk_manager::DiskManager, page::{b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LeafPage}, b_plus_tree_leaf_page::BPlusTreeLeafPage, page::Page, b_plus_tree_internal_page::BPlusTreeInternalPage}}};
+use crate::common::{PageID, PAGE_SIZE, rid::RID};
+use crate::buffer::buffer_pool_manager::BufferPoolManager;
+use crate::storage::page::b_plus_tree_page::BPlusTreePageTraits;
+use crate::storage::page::b_plus_tree_leaf_page::BPlusTreeLeafPage;
+use crate::storage::page::b_plus_tree_internal_page::BPlusTreeInternalPage;
 
 use super::Store;
 
@@ -27,7 +29,8 @@ pub struct BPlusTree {
 }
 
 impl BPlusTree {
-    pub fn new(index_name: String, buffer_pool_manager: BufferPoolManager, leaf_max_size: usize, internal_max_size: usize) -> Self {
+    pub fn new(index_name: String, buffer_pool_manager: BufferPoolManager, 
+                leaf_max_size: usize, internal_max_size: usize) -> Self {
         Self {
             index_name,
             root_page_id: 0,
@@ -44,17 +47,6 @@ impl BPlusTree {
 
 impl Store for BPlusTree {
     fn insert(&mut self, key: &String, value: &Vec<u8>) -> crate::error::Result<()> {
-        let page_id = self.get_root_page_id();
-        let page = self.buffer_pool_manager.fetch_page(page_id);
-        if page.is_none() {
-            return Ok(())
-        }
-        let page = page.unwrap();
-        let data_ptr: *mut [u8; PAGE_SIZE] = &mut page.data;
-
-        unsafe {
-            let leaf_page = data_ptr.cast::<BPlusTreeLeafPage>();
-        };
         Ok(())
     }
 
@@ -64,14 +56,17 @@ impl Store for BPlusTree {
 
     fn get_value(&mut self, key: KeyType) -> Option<ValueType> {
         unsafe {
-            let page = self.buffer_pool_manager.fetch_page(self.root_page_id).expect("fetch failed");
+            let page = self.buffer_pool_manager.fetch_page(self.root_page_id)
+                .expect("fetch failed");
             let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
             let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
             let mut tree_page = tree_page_ptr.as_ref().unwrap();
             while !tree_page.is_leaf_page() {
                 // brute force search; use binary search later
                 if key < tree_page.array[1].0 {
-                    let page = self.buffer_pool_manager.fetch_page(tree_page.array[0].1).expect("fetch failed");
+                    let page = self.buffer_pool_manager
+                        .fetch_page(tree_page.array[0].1)
+                        .expect("fetch failed");
                     let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
                     let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
                     tree_page = tree_page_ptr.as_ref().unwrap();
@@ -80,7 +75,9 @@ impl Store for BPlusTree {
                         let left_key = tree_page.array[i as usize].0;
                         let right_key = tree_page.array[(i+1) as usize].0;
                         if left_key <= key && key < right_key {
-                            let page = self.buffer_pool_manager.fetch_page(tree_page.array[i as usize].1).expect("fetch failed");
+                            let page = self.buffer_pool_manager
+                                .fetch_page(tree_page.array[i as usize].1)
+                                .expect("fetch failed");
                             let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
                             let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
                             tree_page = tree_page_ptr.as_ref().unwrap();
@@ -89,7 +86,9 @@ impl Store for BPlusTree {
                     }
                     let last_key_index: usize = tree_page.get_size() as usize;
                     if key >= tree_page.array[last_key_index].0 {
-                        let page = self.buffer_pool_manager.fetch_page(tree_page.array[last_key_index].1).expect("fetch failed");
+                        let page = self.buffer_pool_manager
+                            .fetch_page(tree_page.array[last_key_index].1)
+                            .expect("fetch failed");
                         let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
                         let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
                         tree_page = tree_page_ptr.as_ref().unwrap();

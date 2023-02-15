@@ -3,7 +3,7 @@ use gman_db::storage::index::Store;
 use gman_db::storage::index::b_plus_tree::BPlusTree;
 use gman_db::storage::page::b_plus_tree_internal_page::BPlusTreeInternalPage;
 use gman_db::storage::page::b_plus_tree_leaf_page::BPlusTreeLeafPage;
-use gman_db::storage::page::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LeafPage};
+use gman_db::storage::page::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LEAF_PAGE};
 use gman_db::common::{PAGE_SIZE, INVALID_PAGE_ID};
 use gman_db::storage::disk::disk_manager::DiskManager;
 use gman_db::buffer::buffer_pool_manager::BufferPoolManager;
@@ -44,7 +44,7 @@ fn test_b_plus_tree_get_value() {
         array: kv_data1
     };
     root_page1.b_plus_tree_page.size = 3;
-    root_page1.set_page_type(LeafPage);
+    root_page1.set_page_type(LEAF_PAGE);
     let bytes1: &[u8; PAGE_SIZE] = unsafe {
         let data_ptr: *const BPlusTreeLeafPage = &root_page1;
         data_ptr.cast::<[u8; PAGE_SIZE]>().as_ref().unwrap()
@@ -63,7 +63,7 @@ fn test_b_plus_tree_get_value() {
         array: kv_data2
     };
     root_page2.b_plus_tree_page.size = 3;
-    root_page2.set_page_type(LeafPage);
+    root_page2.set_page_type(LEAF_PAGE);
     let bytes2: &[u8; PAGE_SIZE] = unsafe {
         let data_ptr: *const BPlusTreeLeafPage = &root_page2;
         data_ptr.cast::<[u8; PAGE_SIZE]>().as_ref().unwrap()
@@ -82,7 +82,7 @@ fn test_b_plus_tree_get_value() {
         array: kv_data3
     };
     root_page3.b_plus_tree_page.size = 3;
-    root_page3.set_page_type(LeafPage);
+    root_page3.set_page_type(LEAF_PAGE);
     let bytes3: &[u8; PAGE_SIZE] = unsafe {
         let data_ptr: *const BPlusTreeLeafPage = &root_page3;
         data_ptr.cast::<[u8; PAGE_SIZE]>().as_ref().unwrap()

@@ -1,6 +1,6 @@
 use crate::common::{PageID, LSN, PAGE_SIZE};
 use std::mem;
-use super::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LeafPage};
+use super::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LEAF_PAGE};
 
 const LEAF_HEADER_SIZE: usize = mem::size_of::<BPlusTreePage>();
 const LEAF_DATA_SIZE: usize = PAGE_SIZE - LEAF_HEADER_SIZE;
@@ -15,7 +15,7 @@ pub struct BPlusTreeInternalPage {
 }
 
 impl BPlusTreePageTraits for BPlusTreeInternalPage {
-    fn is_leaf_page(&self) -> bool { return self.b_plus_tree_page.page_type as u32 == LeafPage as u32; }
+    fn is_leaf_page(&self) -> bool { return self.b_plus_tree_page.page_type as u32 == LEAF_PAGE as u32; }
     fn is_root_page(&self) -> bool { return false; }
     fn set_page_type(&mut self, page_type: u32) { self.b_plus_tree_page.page_type = page_type; }
 
