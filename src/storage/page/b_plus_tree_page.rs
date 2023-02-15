@@ -3,14 +3,19 @@ use crate::common::{PageID, LSN};
 
 // const DEFAULT_ORDER: usize = 8;
 
-pub enum IndexPageType {
-    InvalidIndexPage = 0,
-    LeafPage,
-    InternalPage
-}
+// #[derive(Clone)]
+// pub enum IndexPageType {
+//     InvalidIndexPage = 0,
+//     LeafPage,
+//     InternalPage
+// }
+
+pub const InvalidIndexPage: u32 = 0;
+pub const LeafPage: u32 = 1;
+pub const InternalPage: u32 = 2;
 
 pub struct BPlusTreePage {
-    pub page_type: IndexPageType,
+    pub page_type: u32,
     pub lsn: LSN,
     pub size: i32,
     pub max_size: i32,
@@ -21,7 +26,7 @@ pub struct BPlusTreePage {
 pub trait BPlusTreePageTraits {
     fn is_leaf_page(&self) -> bool;
     fn is_root_page(&self) -> bool;
-    fn set_page_type(&mut self, page_type: IndexPageType);
+    fn set_page_type(&mut self, page_type: u32);
 
     fn get_size(&self) -> i32;
     fn set_size(&mut self, size: i32);
@@ -43,7 +48,7 @@ pub trait BPlusTreePageTraits {
 impl BPlusTreePage {
     pub fn new(page_id: PageID, parent_page_id: PageID, max_size: i32) -> Self {
         Self {
-            page_type: IndexPageType::InvalidIndexPage, 
+            page_type: InvalidIndexPage, 
             lsn: -1, 
             size: -1, 
             max_size,

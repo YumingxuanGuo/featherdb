@@ -1,6 +1,7 @@
 use crate::common::PageID;
 
+#[derive(Copy, Clone)]
 pub struct RID {
-    page_id: PageID,
-    slot_num: u32
+    pub page_id: PageID,
+    pub slot_num: u32
 }

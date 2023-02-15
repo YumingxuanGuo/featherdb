@@ -1,8 +1,11 @@
-use std::mem;
+use std::{mem};
 
-use crate::{common::{PageID, PAGE_SIZE}, buffer::buffer_pool_manager::BufferPoolManager, storage::{disk::disk_manager::DiskManager, page::{b_plus_tree_page::BPlusTreePage, b_plus_tree_leaf_page::BPlusTreeLeafPage}}};
+use crate::{common::{PageID, PAGE_SIZE, INVALID_PAGE_ID, rid::RID}, buffer::buffer_pool_manager::BufferPoolManager, storage::{disk::disk_manager::DiskManager, page::{b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LeafPage}, b_plus_tree_leaf_page::BPlusTreeLeafPage, page::Page, b_plus_tree_internal_page::BPlusTreeInternalPage}}};
 
 use super::Store;
+
+type KeyType = i32;
+type ValueType = RID;
 
 /**
  * Main class providing the API for the Interactive B+ Tree.
@@ -14,27 +17,23 @@ use super::Store;
  * (3) The structure should shrink and grow dynamically
  * (4) Implement index iterator for range scan
  */
-pub struct BPlusTree<K, V, const N: usize> {
+pub struct BPlusTree {
     index_name: String,
     root_page_id: PageID,
-    buffer_pool_manager: BufferPoolManager,
+    pub buffer_pool_manager: BufferPoolManager,
     // comparator
     leaf_max_size: usize,
     internal_max_size: usize,
-    k: std::marker::PhantomData<K>,
-    v: std::marker::PhantomData<V>,
 }
 
-impl<K, V, const N: usize> BPlusTree<K, V, N> {
-    pub fn new() -> Self {
+impl BPlusTree {
+    pub fn new(index_name: String, buffer_pool_manager: BufferPoolManager, leaf_max_size: usize, internal_max_size: usize) -> Self {
         Self {
-            index_name: "index".to_string(),
+            index_name,
             root_page_id: 0,
-            buffer_pool_manager: BufferPoolManager::new(4, DiskManager::new(), 4),
-            leaf_max_size: 0,
-            internal_max_size: 0,
-            k: std::marker::PhantomData,
-            v: std::marker::PhantomData
+            buffer_pool_manager,
+            leaf_max_size,
+            internal_max_size,
         }
     }
 
@@ -43,7 +42,7 @@ impl<K, V, const N: usize> BPlusTree<K, V, N> {
     }
 }
 
-impl<K, V, const N: usize> Store for BPlusTree<K, V, N> {
+impl Store for BPlusTree {
     fn insert(&mut self, key: &String, value: &Vec<u8>) -> crate::error::Result<()> {
         let page_id = self.get_root_page_id();
         let page = self.buffer_pool_manager.fetch_page(page_id);
@@ -52,10 +51,6 @@ impl<K, V, const N: usize> Store for BPlusTree<K, V, N> {
         }
         let page = page.unwrap();
         let data_ptr: *mut [u8; PAGE_SIZE] = &mut page.data;
-
-        const LEAF_HEADER_SIZE: usize = mem::size_of::<BPlusTreePage>() + mem::size_of::<PageID>();
-        const LEAF_DATA_SIZE: usize = PAGE_SIZE - LEAF_HEADER_SIZE;
-        // const MAX_SIZE: usize = LEAF_DATA_SIZE / N;
 
         unsafe {
             let leaf_page = data_ptr.cast::<BPlusTreeLeafPage>();
@@ -67,7 +62,50 @@ impl<K, V, const N: usize> Store for BPlusTree<K, V, N> {
         Ok(())
     }
 
-    fn get_value() -> crate::error::Result<Option<Vec<u8>>> {
-        Ok(None)
+    fn get_value(&mut self, key: KeyType) -> Option<ValueType> {
+        unsafe {
+            let page = self.buffer_pool_manager.fetch_page(self.root_page_id).expect("fetch failed");
+            let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
+            let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
+            let mut tree_page = tree_page_ptr.as_ref().unwrap();
+            while !tree_page.is_leaf_page() {
+                // brute force search; use binary search later
+                if key < tree_page.array[1].0 {
+                    let page = self.buffer_pool_manager.fetch_page(tree_page.array[0].1).expect("fetch failed");
+                    let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
+                    let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
+                    tree_page = tree_page_ptr.as_ref().unwrap();
+                } else {
+                    for i in 1..tree_page.get_size() {
+                        let left_key = tree_page.array[i as usize].0;
+                        let right_key = tree_page.array[(i+1) as usize].0;
+                        if left_key <= key && key < right_key {
+                            let page = self.buffer_pool_manager.fetch_page(tree_page.array[i as usize].1).expect("fetch failed");
+                            let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
+                            let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
+                            tree_page = tree_page_ptr.as_ref().unwrap();
+                            break;
+                        }
+                    }
+                    let last_key_index: usize = tree_page.get_size() as usize;
+                    if key >= tree_page.array[last_key_index].0 {
+                        let page = self.buffer_pool_manager.fetch_page(tree_page.array[last_key_index].1).expect("fetch failed");
+                        let data_ptr: *const [u8; PAGE_SIZE] = &page.data;
+                        let tree_page_ptr: *const BPlusTreeInternalPage = data_ptr.cast::<BPlusTreeInternalPage>();
+                        tree_page = tree_page_ptr.as_ref().unwrap();
+                    }
+                }
+            }
+            assert!(tree_page.is_leaf_page());
+            let tree_page_ptr: *const BPlusTreeInternalPage = tree_page;
+            let leaf_page_ptr: *const BPlusTreeLeafPage = tree_page_ptr.cast::<BPlusTreeLeafPage>();
+            let tree_page = leaf_page_ptr.as_ref().unwrap();
+            for (k, v) in tree_page.array {
+                if key == k {
+                    return Some(v);
+                }
+            }
+        }
+        return None;
     }
 }
