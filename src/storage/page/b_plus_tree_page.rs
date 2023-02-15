@@ -1,4 +1,3 @@
-// use std::sync::{Arc, RwLock};
 use crate::common::{PageID, LSN};
 
 // const DEFAULT_ORDER: usize = 8;

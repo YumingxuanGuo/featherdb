@@ -9,10 +9,10 @@ type ValueType = RID;
 // pub trait Store: Send + Sync {
 pub trait Store: {
     /// Gets a value for a key, if it exists.
-    fn get_value(&mut self, key: KeyType) -> Option<ValueType>;
+    fn get_value(&mut self, key: &KeyType) -> Option<ValueType>;
 
     /// Sets the value for a key, replacing existing value if any.
-    fn insert(&mut self, key: &String, value: &Vec<u8>) -> Result<()>;
+    fn insert(&mut self, key: KeyType, value: ValueType) -> Result<()>;
 
     /// Deletes a key, or does nothing if it does not exists.
     fn remove() -> Result<()>;

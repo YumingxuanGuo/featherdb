@@ -39,7 +39,7 @@ fn test_b_plus_tree_get_value() {
     kv_data1[1] = (1, RID{page_id: 111, slot_num: 111});
     kv_data1[2] = (2, RID{page_id: 222, slot_num: 222});
     let mut root_page1 = BPlusTreeLeafPage{
-        b_plus_tree_page: BPlusTreePage::new(2, 0, 339),
+        b_plus_tree_page: BPlusTreePage::new(1, 0, 339),
         next_page_id: 3,
         array: kv_data1
     };
@@ -93,32 +93,32 @@ fn test_b_plus_tree_get_value() {
     // B+ tree
     let mut tree = BPlusTree::new(String::from("my_tree"), bpm, 339, 509);
 
-    let val0 = tree.get_value(0);
+    let val0 = tree.get_value(&0);
     assert!(val0.is_some());
     assert_eq!(val0.unwrap().page_id, 000);
     assert_eq!(val0.unwrap().slot_num, 000);
 
-    let val2 = tree.get_value(2);
+    let val2 = tree.get_value(&2);
     assert!(val2.is_some());
     assert_eq!(val2.unwrap().page_id, 222);
     assert_eq!(val2.unwrap().slot_num, 222);
 
-    let val3 = tree.get_value(3);
+    let val3 = tree.get_value(&3);
     assert!(val3.is_some());
     assert_eq!(val3.unwrap().page_id, 333);
     assert_eq!(val3.unwrap().slot_num, 333);
 
-    let val6 = tree.get_value(6);
+    let val6 = tree.get_value(&6);
     assert!(val6.is_some());
     assert_eq!(val6.unwrap().page_id, 666);
     assert_eq!(val6.unwrap().slot_num, 666);
 
-    let val7 = tree.get_value(7);
+    let val7 = tree.get_value(&7);
     assert!(val7.is_some());
     assert_eq!(val7.unwrap().page_id, 777);
     assert_eq!(val7.unwrap().slot_num, 777);
     
-    let val9 = tree.get_value(9);
+    let val9 = tree.get_value(&9);
     assert!(val9.is_some());
     assert_eq!(val9.unwrap().page_id, 999);
     assert_eq!(val9.unwrap().slot_num, 999);
