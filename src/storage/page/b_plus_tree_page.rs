@@ -6,6 +6,8 @@ pub const INVALID_INDEX_PAGE: u32 = 0;
 pub const LEAF_PAGE: u32 = 1;
 pub const INTERNAL_PAGE: u32 = 2;
 
+type KeyType = i32;
+
 pub struct BPlusTreePage {
     pub page_type: u32,
     pub lsn: LSN,
@@ -35,6 +37,8 @@ pub trait BPlusTreePageTraits {
     fn set_page_id(&mut self, page_id: PageID);
 
     fn set_lsn(&mut self, lsn: LSN);
+
+    fn key_at(&self, index: i32) -> KeyType;
 }
 
 impl BPlusTreePage {

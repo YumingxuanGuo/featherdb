@@ -35,6 +35,11 @@ impl BPlusTreePageTraits for BPlusTreeLeafPage {
     fn set_page_id(&mut self, page_id: PageID) { self.b_plus_tree_page.page_id = page_id; }
 
     fn set_lsn(&mut self, lsn: LSN) { self.b_plus_tree_page.lsn = lsn; }
+
+    fn key_at(&self, index: i32) -> KeyType {
+        let (key, _value) = self.array[index as usize];
+        return key;
+    }
 }
 
 impl BPlusTreeLeafPage {
@@ -47,8 +52,8 @@ impl BPlusTreeLeafPage {
 
     pub fn set_next_page_id(&mut self, next_page_id: PageID) { self.next_page_id = next_page_id; }
 
-    pub fn key_at(&self, index: i32) -> &KeyType {
-        let (key, _value) = &self.array[index as usize];
-        return &key;
+    pub fn value_at(&self, index: i32) -> ValueType {
+        let (_key, value) = self.array[index as usize];
+        return value;
     }
 }

@@ -34,6 +34,11 @@ impl BPlusTreePageTraits for BPlusTreeInternalPage {
     fn set_page_id(&mut self, page_id: PageID) { self.b_plus_tree_page.page_id = page_id; }
 
     fn set_lsn(&mut self, lsn: LSN) { self.b_plus_tree_page.lsn = lsn; }
+
+    fn key_at(&self, index: i32) -> KeyType {
+        let (key, _value) = self.array[index as usize];
+        return key;
+    }
 }
 
 impl BPlusTreeInternalPage {
@@ -41,18 +46,13 @@ impl BPlusTreeInternalPage {
         self.b_plus_tree_page = BPlusTreePage::new(page_id, parent_page_id, KVPAIR_SIZE.try_into().unwrap());
     }
 
-    pub fn key_at(&self, index: i32) -> &KeyType {
-        let (key, _value) = &self.array[index as usize];
-        return &key;
-    }
-
     pub fn set_key_at(&mut self, index: i32, new_key: &KeyType) {
         let (key, _value) = &mut self.array[index as usize];
         *key = *new_key;
     }
 
-    pub fn value_at(&self, index: i32) -> &ValueType {
-        let (_key, value) = &self.array[index as usize];
-        return &value;
+    pub fn value_at(&self, index: i32) -> ValueType {
+        let (_key, value) = self.array[index as usize];
+        return value;
     }
 }
