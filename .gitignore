@@ -1,2 +1,4 @@
 /target
 /data
+get_project_scale.sh
+push.sh
