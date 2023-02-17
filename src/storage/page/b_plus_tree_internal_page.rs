@@ -1,6 +1,6 @@
-use crate::common::{PageID, LSN, PAGE_SIZE};
+use crate::common::{PageID, LSN, PAGE_SIZE, INVALID_PAGE_ID};
 use std::mem;
-use super::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LEAF_PAGE};
+use super::b_plus_tree_page::{BPlusTreePage, BPlusTreePageTraits, LEAF_PAGE, INTERNAL_PAGE};
 
 const LEAF_HEADER_SIZE: usize = mem::size_of::<BPlusTreePage>();
 const LEAF_DATA_SIZE: usize = PAGE_SIZE - LEAF_HEADER_SIZE;
@@ -15,8 +15,8 @@ pub struct BPlusTreeInternalPage {
 }
 
 impl BPlusTreePageTraits for BPlusTreeInternalPage {
-    fn is_leaf_page(&self) -> bool { return self.b_plus_tree_page.page_type as u32 == LEAF_PAGE as u32; }
-    fn is_root_page(&self) -> bool { return false; }
+    fn is_leaf_page(&self) -> bool { return self.b_plus_tree_page.page_type == LEAF_PAGE; }
+    fn is_root_page(&self) -> bool { return self.b_plus_tree_page.parent_page_id == INVALID_PAGE_ID; }
     fn set_page_type(&mut self, page_type: u32) { self.b_plus_tree_page.page_type = page_type; }
 
     fn get_size(&self) -> i32 { return self.b_plus_tree_page.size; }
@@ -42,8 +42,10 @@ impl BPlusTreePageTraits for BPlusTreeInternalPage {
 }
 
 impl BPlusTreeInternalPage {
-    pub fn init(&mut self, page_id: PageID, parent_page_id: PageID, _max_size: i32) {
-        self.b_plus_tree_page = BPlusTreePage::new(page_id, parent_page_id, KVPAIR_SIZE.try_into().unwrap());
+    pub fn init(&mut self, page_id: PageID, parent_page_id: PageID, max_size: i32) {
+        self.b_plus_tree_page = BPlusTreePage::new(page_id, parent_page_id, max_size);
+        self.b_plus_tree_page.page_type = INTERNAL_PAGE;
+        self.set_size(1);
     }
 
     pub fn set_key_at(&mut self, index: i32, new_key: &KeyType) {

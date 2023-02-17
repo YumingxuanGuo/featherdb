@@ -124,4 +124,101 @@ fn test_b_plus_tree_get_value() {
     assert_eq!(val9.unwrap().slot_num, 999);
 
     tree.buffer_pool_manager.flush_all_pages();
+
+
+    // let buffer_pool_size = 10;
+    // let k = 5;
+  
+    // let disk_manager = DiskManager::new();
+    // let bpm = BufferPoolManager::new(buffer_pool_size, disk_manager, k);
+
+    // // B+ tree
+    // let mut tree = BPlusTree::new(String::from("my_tree"), bpm, 2, 3);
+
+    // tree.insert(5, RID { page_id: 555, slot_num: 555 }).expect("insert failed");
+    // tree.insert(1, RID { page_id: 111, slot_num: 111 }).expect("insert failed");
+    // tree.insert(9, RID { page_id: 999, slot_num: 999 }).expect("insert failed");
+
+    // let val1 = tree.get_value(&1);
+    // assert!(val1.is_some());
+    // assert_eq!(val1.unwrap().page_id, 111);
+    // assert_eq!(val1.unwrap().slot_num, 111);
+
+    // let val5 = tree.get_value(&5);
+    // assert!(val5.is_some());
+    // assert_eq!(val5.unwrap().page_id, 555);
+    // assert_eq!(val5.unwrap().slot_num, 555);
+
+    // let val9 = tree.get_value(&9);
+    // assert!(val9.is_some());
+    // assert_eq!(val9.unwrap().page_id, 999);
+    // assert_eq!(val9.unwrap().slot_num, 999);
+
+
+
+    // tree.insert(7, RID { page_id: 777, slot_num: 777 }).expect("insert failed");
+    // tree.insert(2, RID { page_id: 222, slot_num: 222 }).expect("insert failed");
+    // tree.insert(3, RID { page_id: 333, slot_num: 333 }).expect("insert failed");
+
+    // let val7 = tree.get_value(&7);
+    // assert!(val7.is_some());
+    // assert_eq!(val7.unwrap().page_id, 777);
+    // assert_eq!(val7.unwrap().slot_num, 777);
+
+    // let val5 = tree.get_value(&5);
+    // assert!(val5.is_some());
+    // assert_eq!(val5.unwrap().page_id, 555);
+    // assert_eq!(val5.unwrap().slot_num, 555);
+
+    // let val9 = tree.get_value(&9);
+    // assert!(val9.is_some());
+    // assert_eq!(val9.unwrap().page_id, 999);
+    // assert_eq!(val9.unwrap().slot_num, 999);
+
+    // let val2 = tree.get_value(&2);
+    // assert!(val2.is_some());
+    // assert_eq!(val2.unwrap().page_id, 222);
+    // assert_eq!(val2.unwrap().slot_num, 222);
+
+    // let val3 = tree.get_value(&3);
+    // assert!(val3.is_some());
+    // assert_eq!(val3.unwrap().page_id, 333);
+    // assert_eq!(val3.unwrap().slot_num, 333);
+
+    // let val9 = tree.get_value(&9);
+    // assert!(val9.is_some());
+    // assert_eq!(val9.unwrap().page_id, 999);
+    // assert_eq!(val9.unwrap().slot_num, 999);
+}
+
+
+#[test]
+fn test_b_plus_tree_insert() {
+    let buffer_pool_size = 10;
+    let k = 5;
+  
+    let disk_manager = DiskManager::new();
+    let bpm = BufferPoolManager::new(buffer_pool_size, disk_manager, k);
+
+    let mut tree = BPlusTree::new(String::from("my_tree"), bpm, 2, 3);
+    
+    
+    tree.insert(4, RID { page_id: 4, slot_num: 4 }).unwrap();
+    tree.insert(7, RID { page_id: 7, slot_num: 7 }).unwrap();
+    tree.insert(0, RID { page_id: 0, slot_num: 0 }).unwrap();
+    tree.insert(1, RID { page_id: 1, slot_num: 1 }).unwrap();
+    tree.insert(5, RID { page_id: 5, slot_num: 5 }).unwrap();
+    tree.insert(6, RID { page_id: 6, slot_num: 6 }).unwrap();
+    tree.insert(3, RID { page_id: 3, slot_num: 3 }).unwrap();
+    tree.insert(2, RID { page_id: 2, slot_num: 2 }).unwrap();
+    
+
+    for i in 0..8 {
+        let val = tree.get_value(&i);
+        assert!(val.is_some());
+        assert_eq!(val.unwrap().page_id, i);
+        assert_eq!(val.unwrap().slot_num, i as u32);
+    }
+
+    tree.buffer_pool_manager.flush_all_pages();
 }

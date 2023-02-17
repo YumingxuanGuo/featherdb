@@ -45,8 +45,8 @@ impl BPlusTreePage {
     pub fn new(page_id: PageID, parent_page_id: PageID, max_size: i32) -> Self {
         Self {
             page_type: INVALID_INDEX_PAGE, 
-            lsn: -1, 
-            size: -1, 
+            lsn: 0, 
+            size: 0, 
             max_size,
             page_id, 
             parent_page_id,
