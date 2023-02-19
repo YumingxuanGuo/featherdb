@@ -26,6 +26,9 @@ pub struct BPlusTree {
     // comparator
     leaf_max_size: i32,
     internal_max_size: i32,
+    
+    leftmost_leaf_page_id: PageID,
+    it_ptr: ItPtr,
 }
 
 impl BPlusTree {
@@ -37,6 +40,8 @@ impl BPlusTree {
             buffer_pool_manager,
             leaf_max_size,
             internal_max_size,
+            leftmost_leaf_page_id: INVALID_PAGE_ID,
+            it_ptr: ItPtr { cur_page_id: INVALID_PAGE_ID, cur_index: -1 }
         }
     }
 
@@ -67,6 +72,9 @@ impl Store for BPlusTree {
 
                 // update the tree's root's page_id
                 self.root_page_id = new_leaf_page_id;
+
+                // set the tree's leftmost leaf's page_id
+                self.leftmost_leaf_page_id = new_leaf_page_id;
 
                 // insert in the root/leaf
                 new_leaf_page.array[0] = (key, value);
@@ -213,6 +221,29 @@ impl Store for BPlusTree {
     }
 }
 
+
+
+/**
+ * Helper functions for BPlusTree.
+ * 
+ * 
+ *    find_leaf_page_id(&mut self, key: &KeyType) -> PageID
+ * 
+ *    fetch_page_as_const_ptr<Dst>(&mut self, page_id: PageID) -> *const Dst
+ * 
+ *    fetch_page_as_mut_ptr<Dst>(&mut self, page_id: PageID) -> *mut Dst
+ * 
+ *    find_new_key_position<PageType: BPlusTreePageTraits>(&self, key: KeyType, page: &PageType) -> i32
+ * 
+ *    insert_in_leaf(&mut self, key: KeyType, value: ValueType, 
+ *                  leaf_page: &mut BPlusTreeLeafPage) -> crate::error::Result<()>
+ *
+ *    insert_in_internal(&mut self, key: KeyType, value: PageID, 
+ *                      internal_page: &mut BPlusTreeInternalPage) -> crate::error::Result<()>
+ *                      
+ *    insert_in_parent(&mut self, key: KeyType, left_page_id: PageID, 
+ *                      right_page_id: PageID, parent_page_id: PageID) -> crate::error::Result<()>
+ */
 impl BPlusTree {
 
     /**
@@ -535,5 +566,50 @@ impl BPlusTree {
         self.buffer_pool_manager.unpin_page(new_parent_page_id, true);
 
         self.insert_in_parent(up_key, parent_page_id, new_parent_page_id, para_parent_page_id)
+    }
+}
+
+
+
+/**
+ * Struct that holds information for the iterator.
+ */
+struct ItPtr {
+    cur_page_id: PageID,
+    cur_index: i32,
+}
+
+/**
+ * Iterator for BPlusTree.
+ */
+impl Iterator for BPlusTree {
+    type Item = (KeyType, ValueType);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            // increment cur_index
+            self.it_ptr.cur_index += 1;
+
+            // fetch the corresponding leaf page and check if it has been passed
+            let mut leaf_page_ptr =
+                self.fetch_page_as_const_ptr::<BPlusTreeLeafPage>(self.it_ptr.cur_page_id);
+            let mut leaf_page = leaf_page_ptr.as_ref()
+                .expect("raw-pointer to reference failed");
+            if self.it_ptr.cur_index >= leaf_page.get_size() {
+                self.it_ptr.cur_page_id = leaf_page.get_next_page_id();
+                self.it_ptr.cur_index = 0;
+
+                // assumption: if there is a next sibling, then it is not empty
+                if self.it_ptr.cur_page_id == INVALID_PAGE_ID {
+                    return None;
+                }
+
+                leaf_page_ptr = self.fetch_page_as_const_ptr::<BPlusTreeLeafPage>(self.it_ptr.cur_page_id);
+                leaf_page = leaf_page_ptr.as_ref().expect("raw-pointer to reference failed");
+            }
+
+            let (key, value) = leaf_page.array[self.it_ptr.cur_index as usize];
+            return Some((key, value));
+        }
     }
 }
