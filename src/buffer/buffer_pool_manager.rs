@@ -1,31 +1,10 @@
 use std::collections::{HashMap, LinkedList};
-use std::sync::{RwLock, Arc, Mutex};
 use std::vec::{Vec};
 use crate::common::{FrameID, PageID, INVALID_PAGE_ID};
 use crate::storage::page::page::{Page};
 use crate::storage::disk::disk_manager::{DiskManager};
 
 use super::lru_k_replacer::{LRUKReplacer};
-
-struct MetaData {
-    pub page_id: PageID,
-    pub pin_count: i32,
-    pub is_dirty: bool,
-}
-
-#[derive(Default)]
-struct BPMFields {
-    pool_size: usize,
-    next_page_id: PageID,
-
-    // log_manager,
-    disk_manager: DiskManager,
-    page_table: HashMap<PageID, FrameID>,
-    meta_data: HashMap<FrameID, MetaData>,
-    replacer: LRUKReplacer,
-    free_list: LinkedList<FrameID>,
-    pages: Vec<Arc<RwLock<Page>>>,
-}
 
 pub struct BufferPoolManager {
     pool_size: usize,
@@ -34,13 +13,9 @@ pub struct BufferPoolManager {
     // log_manager,
     disk_manager: DiskManager,
     page_table: HashMap<PageID, FrameID>,
-    meta_data: HashMap<FrameID, MetaData>,
     replacer: LRUKReplacer,
     free_list: LinkedList<FrameID>,
-    pages: Vec<Page>,
-
-    pages_concurrent: Vec<Arc<RwLock<Page>>>,
-    fields: Mutex<BPMFields>,
+    pages: Vec<Page>
 }
 
 impl BufferPoolManager {
@@ -50,17 +25,13 @@ impl BufferPoolManager {
             next_page_id: 0,
             disk_manager,
             page_table: HashMap::new(),
-            meta_data: HashMap::new(),
             replacer: LRUKReplacer::new(pool_size, replacer_k),
             free_list: LinkedList::new(),
-            pages: vec![Page::new(); pool_size],
-            pages_concurrent: Vec::new(),
-            fields: Mutex::new(BPMFields::default()),
+            pages: vec![Page::new(); pool_size]
         };
         
         for i in 0..pool_size {
             this.free_list.push_back(i as FrameID);
-            this.pages_concurrent.push(Arc::new(RwLock::new(Page::new())));
         }
 
         return this;
@@ -108,43 +79,6 @@ impl BufferPoolManager {
 
         self.pages[frame_id as usize].pin_count = 1;
         self.pages[frame_id as usize].page_id = *page_id;
-
-        return Some(&mut self.pages[frame_id as usize]);
-    }
-
-    pub fn new_page_concurrent(&mut self, page_id: &mut PageID) -> Option<&mut Page> {
-        let mut fields = self.fields.lock().expect("fields lock failed");
-
-        let mut frame_id: FrameID = -1;
-
-        if !fields.free_list.is_empty() {
-            // if free frames exist
-            frame_id = *fields.free_list.front().unwrap();
-            fields.free_list.pop_front();
-        } else {
-            // all frames are occupied, need eviction
-            if !fields.replacer.evict(&mut frame_id) {
-                return None;
-            }
-            let evicted_page_ptr = fields.pages[frame_id as usize].clone();
-            if fields.meta_data[&frame_id].is_dirty {
-                drop(fields);
-                let evicted_page = evicted_page_ptr.read().expect("evicted page rLock failed");
-                self.disk_manager.write_page(evicted_page.page_id, &evicted_page.data);
-                fields = self.fields.lock().expect("fields lock failed");
-            }
-            let id = fields.meta_data[&frame_id].page_id;
-            fields.page_table.remove(&id);
-        }
-
-        // *page_id = self.allocate_page();
-        fields.page_table.insert(*page_id, frame_id);
-
-        fields.replacer.record_access(frame_id);
-        fields.replacer.set_evictable(frame_id, false);
-
-        fields.meta_data.get_mut(&frame_id).unwrap().pin_count = 1;
-        fields.meta_data.get_mut(&frame_id).unwrap().page_id = *page_id;
 
         return Some(&mut self.pages[frame_id as usize]);
     }
