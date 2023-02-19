@@ -9,6 +9,7 @@ pub struct PageFile {  // TODO: temporarily set public for debugging
     // mutex
 }
 
+#[derive(Default)]
 pub struct DiskManager {
     // mutex
     pub pages: Vec<PageFile>,  // TODO: temporarily set public for debugging

@@ -7,6 +7,7 @@ struct FrameMetaData {
     timestamps: LinkedList<usize>,
 }
 
+#[derive(Default)]
 pub struct LRUKReplacer {
     current_timestamp: usize,
     num_frames: usize,
