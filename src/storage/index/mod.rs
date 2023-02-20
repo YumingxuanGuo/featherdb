@@ -1,19 +1,23 @@
-pub mod b_plus_tree;
+pub mod b_plus_tree_memory;
 
-use crate::{error::Result, common::rid::RID};
+use std::fmt::Display;
 
-type KeyType = i32;
-type ValueType = RID;
+use crate::error::Result;
 
 /// A key/value store.
-// pub trait Store: Send + Sync {
-pub trait Store: {
+pub trait Store: Display + Send + Sync {
+    /// Sets a value for a key, replacing the existing value if any.
+    fn set_or_insert(&mut self, key: &[u8], value: Vec<u8>) -> Result<()>;
+
     /// Gets a value for a key, if it exists.
-    fn get_value(&mut self, key: &KeyType) -> Option<ValueType>;
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
-    /// Sets the value for a key, replacing existing value if any.
-    fn insert(&mut self, key: KeyType, value: ValueType) -> Result<()>;
+    /// Deletes a key, doing nothing if it does not exist.
+    fn delete(&mut self, key: &[u8]) -> Result<()>;
 
-    /// Deletes a key, or does nothing if it does not exists.
-    fn remove() -> Result<()>;
+    // /// Iterates over an ordered range of key/value pairs.
+    // fn scan(&self, range: Range) -> Scan;
+
+    // /// Flushes any buffered data to the underlying storage medium.
+    // fn flush(&mut self) -> Result<()>;
 }
