@@ -1,4 +1,4 @@
-use super::{Store};
+use crate::storage::Store;
 use crate::error::{Error, Result};
 
 use std::{sync::{Arc, RwLock}, fmt::Display, ops::{DerefMut, Deref}, cmp::Ordering};
@@ -9,7 +9,7 @@ const DEFAULT_ORDER: usize = 8;
 type KeyType = Vec<u8>;
 type ValueType = Vec<u8>;
 
-/// In-memory key-value store using a B+tree.
+/// In-memory B+tree index.
 pub struct BPlusTree {
     /// The tree root, guarded by an RwLock to support multiple iterators across it.
     root: Arc<RwLock<Node>>,
@@ -38,12 +38,12 @@ impl Display for BPlusTree {
 
 impl Store for BPlusTree {
     fn set_or_insert(&mut self, key: &[u8], value: ValueType) -> Result<()> {
-        // self.root.write()?.set(key, value);
+        self.root.write()?.set_or_insert(key, value);
         Ok(())
     }
 
     fn get(&self, key: &[u8]) -> Result<Option<ValueType>> {
-        Ok(self.root.read()?.node_get(key))
+        Ok(self.root.read()?.get(key))
     }
 
     fn delete(&mut self, key: &[u8]) -> Result<()> {
@@ -67,10 +67,17 @@ enum Node {
 }
 
 impl Node {
+    /// Sets a key to a value in the node, inserting or updating the key as appropriate. If the
+    /// node splits, return the split key and new (right) node.
+    fn set_or_insert(&mut self, key: &[u8], value: ValueType) -> Option<(Vec<u8>, Node)> {
+        
+        None
+    }
+
     /// Fetches a value for a key, if it exists.
-    fn node_get(&self, key: &[u8]) -> Option<ValueType> {
+    fn get(&self, key: &[u8]) -> Option<ValueType> {
         match self {
-            Self::Root(children) | Self::Inner(children) => children.children_get(key),
+            Self::Root(children) | Self::Inner(children) => children.get(key),
             Self::Leaf(values) => values.values_get(key),
         }
     }
@@ -105,9 +112,9 @@ impl Children {
     }
 
     /// Fetches a value for a key, if it exists.
-    fn children_get(&self, key: &[u8]) -> Option<ValueType> {
+    fn get(&self, key: &[u8]) -> Option<ValueType> {
         if !self.is_empty() {
-            self.lookup(key).1.node_get(key)
+            self.lookup(key).1.get(key)
         } else {
             None
         }
