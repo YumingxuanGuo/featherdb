@@ -3,10 +3,8 @@ mod index;
 mod table;
 mod data_structures;
 
-pub mod mvcc;
-
-use std::ops::Range;
 use std::fmt::Display;
+use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
 use crate::common::{KeyType, ValueType};
@@ -23,34 +21,35 @@ pub trait Store: Display + Send + Sync {
     fn delete(&mut self, key: &[u8]) -> Result<()>;
 
     /// Iterates over an ordered range of key/value pairs.
-    fn scan(&self, range: Range<KeyType>) -> Scan;
+    fn scan(&self, range: Range) -> Scan;
 
     /// Flushes any buffered data to the underlying storage medium.
     fn flush(&mut self) -> Result<()>;
 }
 
-// /// A scan range wrapper.
-// pub struct Range {
-//     start: Bound<KeyType>,
-//     end: Bound<KeyType>,
-// }
+/// A scan range wrapper.
+pub struct Range {
+    start: Bound<KeyType>,
+    end: Bound<KeyType>,
+}
 
-// impl Range {
-//     pub fn from<R: RangeBounds<KeyType>>(range: R) -> Self {
-//         Self {
-//             start: match range.start_bound() {
-//                 Bound::Included(v) => Bound::Included(v.to_vec()),
-//                 Bound::Excluded(v) => Bound::Excluded(v.to_vec()),
-//                 Bound::Unbounded => Bound::Unbounded,
-//             },
-//             end: match range.start_bound() {
-//                 Bound::Included(v) => Bound::Included(v.to_vec()),
-//                 Bound::Excluded(v) => Bound::Excluded(v.to_vec()),
-//                 Bound::Unbounded => Bound::Unbounded,
-//             },
-//         }
-//     }
-// }
+impl Range {
+    /// std::ops::Range does not support inclusive range bounds.
+    pub fn from<R: RangeBounds<KeyType>>(range: R) -> Self {
+        Self {
+            start: match range.start_bound() {
+                Bound::Included(v) => Bound::Included(v.to_vec()),
+                Bound::Excluded(v) => Bound::Excluded(v.to_vec()),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+            end: match range.start_bound() {
+                Bound::Included(v) => Bound::Included(v.to_vec()),
+                Bound::Excluded(v) => Bound::Excluded(v.to_vec()),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+        }
+    }
+}
 
 /// Iterator over a key/value range.
 pub type Scan = Box<dyn DoubleEndedIterator<Item = Result<(KeyType, ValueType)>> + Send>;

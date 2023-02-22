@@ -1,8 +1,7 @@
-use crate::storage::{Store, Scan};
+use crate::storage::{Store, Scan, Range};
 use crate::error::{Error, Result};
 use crate::common::{KeyType, ValueType};
 
-use std::ops::Range;
 use std::{sync::{Arc, RwLock}, fmt::Display, ops::{DerefMut, Deref}, cmp::Ordering};
 
 /// The default B+tree order, i.e. maximum number of children per node.
@@ -50,11 +49,12 @@ impl Store for BPlusTree {
         Ok(())
     }
 
-    fn scan(&self, range: Range<KeyType>) -> Scan {
+    fn scan(&self, range: Range) -> Scan {
         Box::new(Iter::new(self.root.clone(), range))
     }
 
     fn flush(&mut self) -> Result<()> {
+        // interact with disk manager
         Ok(())
     }
 }
@@ -175,7 +175,7 @@ struct Iter {
     /// The root node of the tree we're iterating across.
     root: Arc<RwLock<Node>>,
     /// The range we're iterating over.
-    range: Range<KeyType>,
+    range: Range,
     /// The front cursor keeps track of the last returned value from the front.
     front_cursor: Option<Vec<u8>>,
     /// The back cursor keeps track of the last returned value from the back.
@@ -184,7 +184,7 @@ struct Iter {
 
 impl Iter {
     /// Creates a new iterator.
-    fn new(root: Arc<RwLock<Node>>, range: Range<KeyType>) -> Self {
+    fn new(root: Arc<RwLock<Node>>, range: Range) -> Self {
         Self { root, range, front_cursor: None, back_cursor: None }
     }
 
