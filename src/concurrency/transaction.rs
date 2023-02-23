@@ -2,7 +2,7 @@ use std::{sync::{Arc, RwLock}};
 
 use crate::{storage::{Store, Range}, error::{Result, Error}, common::ValueType};
 
-use super::{Mode, snapshot::Snapshot, key::Key, serialize, deserialize};
+use super::{Mode, snapshot::Snapshot, txnkey::TxnKey, serialize, deserialize};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -23,16 +23,16 @@ impl Transaction {
         let mut session = store.write()?;
 
         // Gets the next available txn ID.
-        let id = match session.get(&Key::TxnNext.encode())? {
+        let id = match session.get(&TxnKey::TxnNext.encode())? {
             Some(ref v) => deserialize(v)?,
             None => 1,
         };
 
         // Increments TxnNext and store it back.
-        session.set_or_insert(&Key::TxnNext.encode(), serialize(&(id + 1))?)?;
+        session.set_or_insert(&TxnKey::TxnNext.encode(), serialize(&(id + 1))?)?;
 
         // Stores the info of the current active txn.
-        session.set_or_insert(&Key::TxnActive(id).encode(), serialize(&mode)?)?;
+        session.set_or_insert(&TxnKey::TxnActive(id).encode(), serialize(&mode)?)?;
         
         // Takes a new snapshot.
         let mut snapshot = Snapshot::take(&mut session, id)?;
@@ -49,7 +49,7 @@ impl Transaction {
     /// Commits the transaction, by removing the txn from the active set.
     pub fn commit(self) -> Result<()> {
         let mut session = self.store.write()?;
-        session.delete(&Key::TxnActive(self.id).encode())?;
+        session.delete(&TxnKey::TxnActive(self.id).encode())?;
         session.flush()
     }
 
@@ -61,12 +61,12 @@ impl Transaction {
         if self.mode.allow_writing() {
             let mut to_rollback = Vec::new();
             let mut scan = session.scan(Range::from(
-                Key::TxnUpdate(self.id, vec![].into()).encode()
-                ..Key::TxnUpdate(self.id + 1, vec![].into()).encode(),
+                TxnKey::TxnUpdate(self.id, vec![].into()).encode()
+                ..TxnKey::TxnUpdate(self.id + 1, vec![].into()).encode(),
             ));
             while let Some((key, _)) = scan.next().transpose()? {
-                match Key::decode(&key)? {
-                    Key::TxnUpdate(_, updated_key)
+                match TxnKey::decode(&key)? {
+                    TxnKey::TxnUpdate(_, updated_key)
                         => to_rollback.push(updated_key.into_owned()),
                     otherwise
                         => return Err(Error::Internal(format!("Expected TxnUpdate, got {:?}", otherwise))),
@@ -78,12 +78,17 @@ impl Transaction {
                 session.delete(&key)?;
             }
         }
-        session.delete(&Key::TxnActive(self.id).encode())
+        session.delete(&TxnKey::TxnActive(self.id).encode())
     }
 
     /// Sets or inserts a key.
     pub fn set_or_insert(&mut self, key: &[u8], value: Vec<u8>) -> Result<()> {
         self.write(key, Some(value))
+    }
+
+    /// Deletes a key.
+    pub fn delete(&mut self, key: &[u8]) -> Result<()> {
+        self.write(key, None)
     }
 
     /// Writes a value for a key. None is used for deletion.
@@ -96,20 +101,18 @@ impl Transaction {
         // Check if the key has any uncommitted changes by scanning the invisible versions for us.
         let min_invisible_version = 
             self.snapshot.invisible.iter().min().cloned().unwrap_or(self.id + 1);
-        let mut scan = session
-            .scan(Range::from(
-                Key::Record(key.into(), min_invisible_version).encode()
-                ..=Key::Record(key.into(), std::u64::MAX).encode())
-            )
-            .rev();
+        let mut scan = session.scan(Range::from(
+                TxnKey::Record(key.into(), min_invisible_version).encode()
+                ..=TxnKey::Record(key.into(), std::u64::MAX).encode()
+            )).rev();
         while let Some((k, _)) = scan.next().transpose()? {
-            match Key::decode(&k)? {
+            match TxnKey::decode(&k)? {
                 // ???
-                Key::Record(_, version) => {
+                TxnKey::Record(_, version) => {
                     if !self.snapshot.is_visible(version) {
                         return Err(Error::Serialization);
                     }
-                }
+                },
                 otherwise
                     => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", otherwise))),
             }
@@ -117,9 +120,30 @@ impl Transaction {
         std::mem::drop(scan);
 
         // Write the key and its updated record.
-        let record = Key::Record(key.into(), self.id).encode();
-        let update = Key::TxnUpdate(self.id, (&record).into()).encode();
+        let record = TxnKey::Record(key.into(), self.id).encode();
+        let update = TxnKey::TxnUpdate(self.id, (&record).into()).encode();
         session.set_or_insert(&update, vec![])?;
         session.set_or_insert(&record, serialize(&value)?)
+    }
+
+    /// Fetches a key.
+    pub fn get(&self, key: &[u8]) ->Result<Option<ValueType>> {
+        let session = self.store.read()?;
+        let mut scan = session.scan(Range::from(
+            TxnKey::Record(key.into(), 0).encode()
+            ..=TxnKey::Record(key.into(), self.id).encode()
+        )).rev();
+        while let Some((k, v)) = scan.next().transpose()? {
+            match TxnKey::decode(&k)? {
+                TxnKey::Record(_, version) => {
+                    if self.snapshot.is_visible(version) {
+                        return deserialize(&v)?;
+                    }
+                }, 
+                otherwise
+                    => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", otherwise))),
+            }
+        }
+        Ok(None)
     }
 }
