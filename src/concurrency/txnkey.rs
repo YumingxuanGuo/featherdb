@@ -2,10 +2,11 @@ use std::borrow::Cow;
 
 use crate::error::Result;
 
-/// MVCC keys. The encoding preserves the grouping and ordering of keys. Uses a Cow since we want
-/// to take borrows when encoding and return owned when decoding.
+/// MVCC keys. The encoding preserves the grouping and ordering of keys. 
+/// Uses a Cow since we want to take borrows when encoding and return owned when decoding. 
+/// (TODO: Why?)
 #[derive(Debug)]
-pub enum Key<'a> {
+pub enum TxnKey<'a> {
     /// The next available txn ID. Used when starting new txns.
     TxnNext,
     /// Active txn markers, containing the mode. Used to detect concurrent txns, and to resume.
@@ -20,7 +21,7 @@ pub enum Key<'a> {
     Record(Cow<'a, [u8]>, u64),
 }
 
-impl<'a> Key<'a> {
+impl<'a> TxnKey<'a> {
     /// Encodes a key into a byte vector.
     pub fn encode(self) -> Vec<u8> {
         // use encoding::*;
@@ -37,6 +38,6 @@ impl<'a> Key<'a> {
     /// Decodes a key from a byte representation.
     pub fn decode(mut bytes: &[u8]) -> Result<Self> {
         // use encoding::*;
-        Ok(Key::TxnNext)
+        Ok(TxnKey::TxnNext)
     }
 }
