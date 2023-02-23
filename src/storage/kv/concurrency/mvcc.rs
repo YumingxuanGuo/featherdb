@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 
 /// An MVCC-based transactional key-value store.
 pub struct MVCC {
-    /// The underlying KV store. It is protected by a mutex so it can be shared between txns.
+    /// The underlying KV store; protected by a mutex so it can be shared between txns.
     store: Arc<RwLock<Box<dyn Store>>>,
 }
 

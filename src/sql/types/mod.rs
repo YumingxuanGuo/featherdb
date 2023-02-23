@@ -1,6 +1,8 @@
 
 use serde_derive::{Deserialize, Serialize};
 
+use crate::error::Result;
+
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 pub enum DataType {
     Boolean,
@@ -18,3 +20,9 @@ pub enum Value {
     Float(f64),
     String(String),
 }
+
+/// A row of values
+pub type Row = Vec<Value>;
+
+/// A row iterator
+pub type Rows = Box<dyn Iterator<Item = Result<Row>> + Send>;

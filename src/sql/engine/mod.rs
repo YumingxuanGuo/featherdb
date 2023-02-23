@@ -1,6 +1,8 @@
 // The SQL engine provides fundamental CRUD storage operations.
+mod mvcc_engine;
+pub mod raft_engine;
 
-use crate::{concurrency::Mode, error::Result};
+use crate::{storage::kv::concurrency::Mode, error::Result};
 
 use super::{schema::Catalog, types::Row};
 
