@@ -2,21 +2,9 @@ pub mod mvcc;
 pub mod transaction;
 mod snapshot;
 mod txnkey;
+mod encoding;
 
-use serde::{Serialize, Deserialize};
 use serde_derive::{Serialize, Deserialize};
-
-use crate::error::Result;
-
-/// Serializes MVCC metadata.
-fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(value)?)
-}
-
-/// Deserializes MVCC metadata.
-fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
-    Ok(bincode::deserialize(bytes)?)
-}
 
 /// An MVCC transaction mode.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
