@@ -2,7 +2,7 @@ use std::{sync::{RwLockWriteGuard, RwLockReadGuard}, collections::HashSet};
 
 use crate::{error::{Error, Result}, storage::{Store, Range}};
 
-use super::{key::Key, serialize, deserialize};
+use super::{txnkey::TxnKey, serialize, deserialize};
 
 /// A versioned snapshot, containing visibility information about concurrent transactions.
 #[derive(Clone)]
@@ -15,33 +15,33 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Takes a new snapshot, persisting it as `Key::TxnSnapshot(version)`.
+    /// Takes a new snapshot, persisting it as `TxnKey::TxnSnapshot(version)`.
     pub(super) fn take(session: &mut RwLockWriteGuard<Box<dyn Store>>, version: u64) -> Result<Self> {
         let mut snapshot = Self { version, invisible: HashSet::new() };
 
         // A scan of all the TxnActive keys.
         let mut scan = 
-            session.scan(Range::from(Key::TxnActive(0).encode()..Key::TxnActive(version).encode()));
+            session.scan(Range::from(TxnKey::TxnActive(0).encode()..TxnKey::TxnActive(version).encode()));
 
         // Records the currently active txn IDs as invisible.
         while let Some((key, _)) = scan.next().transpose()? {
             // Ensures the scan contains only TxnActive keys (based on the encoding property).
-            match Key::decode(&key)? {
-                Key::TxnActive(id) => snapshot.invisible.insert(id),
+            match TxnKey::decode(&key)? {
+                TxnKey::TxnActive(id) => snapshot.invisible.insert(id),
                 otherwise => return Err(Error::Internal(format!("Expected TxnActive, got {:?}", otherwise))),
             };
         }
 
         // Store info of this new snapshot.
         std::mem::drop(scan);
-        session.set_or_insert(&Key::TxnSnapshot(version).encode(), serialize(&snapshot.invisible)?)?;
+        session.set_or_insert(&TxnKey::TxnSnapshot(version).encode(), serialize(&snapshot.invisible)?)?;
 
         Ok(snapshot)
     }
 
-    /// Restores an existing snapshot from `Key::TxnSnapshot(version)`, or errors if not found.
+    /// Restores an existing snapshot from `TxnKey::TxnSnapshot(version)`, or errors if not found.
     pub(super) fn restore(session: &RwLockReadGuard<Box<dyn Store>>, version: u64) -> Result<Self> {
-        match session.get(&Key::TxnSnapshot(version).encode())? {
+        match session.get(&TxnKey::TxnSnapshot(version).encode())? {
             Some(ref invisible) => Ok(Self { version, invisible: deserialize(invisible)? }),
             None => Err(Error::Value(format!("Snapshot not found for version {}", version))),
         }
