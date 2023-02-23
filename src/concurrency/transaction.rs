@@ -2,7 +2,7 @@ use std::{sync::{Arc, RwLock}};
 
 use crate::{storage::{Store, Range}, error::{Result, Error}, common::ValueType};
 
-use super::{Mode, snapshot::Snapshot, txnkey::TxnKey, serialize, deserialize};
+use super::{Mode, snapshot::{Snapshot, self}, txnkey::TxnKey, mvcc::{serialize, deserialize}};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -19,7 +19,6 @@ pub struct Transaction {
 impl Transaction {
     /// Begins a new transaction in the given mode.
     pub(super) fn begin(store: Arc<RwLock<Box<dyn Store>>>, mode: Mode) -> Result<Self> {
-        // Starts a writing session on the underlying txn store.
         let mut session = store.write()?;
 
         // Gets the next available txn ID.
@@ -27,22 +26,34 @@ impl Transaction {
             Some(ref v) => deserialize(v)?,
             None => 1,
         };
-
         // Increments TxnNext and store it back.
         session.set_or_insert(&TxnKey::TxnNext.encode(), serialize(&(id + 1))?)?;
-
         // Stores the info of the current active txn.
         session.set_or_insert(&TxnKey::TxnActive(id).encode(), serialize(&mode)?)?;
         
         // Takes a new snapshot.
         let mut snapshot = Snapshot::take(&mut session, id)?;
-
-        // If txn mode is set to operate on previous version, fetch the corresponding snapshot.
+        // If txn mode is set to operating on previous version, fetch the corresponding snapshot.
         std::mem::drop(session);
         if let Mode::Snapshot { version } = &mode {
             snapshot = Snapshot::restore(&store.read()?, *version)?
         }
 
+        Ok(Self { store, id, mode, snapshot })
+    }
+
+    /// Resumes an active transaction with the given ID. Errors if the transaction is not active.
+    pub fn resume(store: Arc<RwLock<Box<dyn Store>>>, id: u64) -> Result<Self> {
+        let session = store.read()?;
+        let mode = match session.get(&TxnKey::TxnActive(id).encode())? {
+            Some(v) => deserialize(&v)?,
+            None => return Err(Error::Value(format!("No active transaction {}", id))),
+        };
+        let snapshot = match &mode {
+            Mode::Snapshot { version } => Snapshot::restore(&session, *version)?,
+            _otherwise => Snapshot::restore(&session, id)?,
+        };
+        std::mem::drop(session);
         Ok(Self { store, id, mode, snapshot })
     }
 
@@ -53,7 +64,7 @@ impl Transaction {
         session.flush()
     }
 
-    /// Rolls back the transaction.
+    /// Rolls back the transaction, by removing all updated entries.
     pub fn rollback(self) -> Result<()> {
         let mut session = self.store.write()?;
 
@@ -98,7 +109,7 @@ impl Transaction {
         }
         let mut session = self.store.write()?;
 
-        // Check if the key has any uncommitted changes by scanning the invisible versions for us.
+        // Check if the key has any uncommitted changes by scanning the invisible versions.
         let min_invisible_version = 
             self.snapshot.invisible.iter().min().cloned().unwrap_or(self.id + 1);
         let mut scan = session.scan(Range::from(

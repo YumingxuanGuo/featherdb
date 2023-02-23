@@ -21,10 +21,11 @@ pub enum TxnKey<'a> {
     Record(Cow<'a, [u8]>, u64),
 }
 
+// TODO:
 impl<'a> TxnKey<'a> {
     /// Encodes a key into a byte vector.
     pub fn encode(self) -> Vec<u8> {
-        // use encoding::*;
+        // use crate::common::encoding::*;
         match self {
             Self::TxnNext => vec![0x01],
             Self::TxnActive(id) => vec![0x02],

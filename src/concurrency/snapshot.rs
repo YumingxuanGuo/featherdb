@@ -2,7 +2,7 @@ use std::{sync::{RwLockWriteGuard, RwLockReadGuard}, collections::HashSet};
 
 use crate::{error::{Error, Result}, storage::{Store, Range}};
 
-use super::{txnkey::TxnKey, serialize, deserialize};
+use super::{txnkey::TxnKey, mvcc::{serialize, deserialize}};
 
 /// A versioned snapshot, containing visibility information about concurrent transactions.
 #[derive(Clone)]

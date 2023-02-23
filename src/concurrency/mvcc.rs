@@ -4,6 +4,7 @@ use crate::error::{Result};
 use crate::storage::Store;
 
 use super::{Mode, transaction::Transaction};
+use serde::{Serialize, Deserialize};
 
 
 /// An MVCC-based transactional key-value store.
@@ -34,4 +35,19 @@ impl MVCC {
     pub fn begin_with_mode(&self, mode: Mode) -> Result<Transaction> {
         Transaction::begin(Arc::clone(&self.store), mode)
     }
+
+    /// Resumes a transaction with the given ID.
+    pub fn resume(&self, id: u64) -> Result<Transaction> {
+        Transaction::resume(self.store.clone(), id)
+    }
+}
+
+/// Serializes MVCC metadata.
+pub(super) fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(value)?)
+}
+
+/// Deserializes MVCC metadata.
+pub(super) fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
+    Ok(bincode::deserialize(bytes)?)
 }
