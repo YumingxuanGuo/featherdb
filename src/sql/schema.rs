@@ -35,14 +35,29 @@ pub struct Table {
 }
 
 impl Table {
-    /// Creates a new table schema
+    /// Creates a new table schema.
     pub fn new(name: String, columns: Vec<Column>) -> Result<Self> {
         Ok(Self { name, columns })
     }
 
-    /// Returns the primary key value of a row
+    /// Gets the table column with the primary key.
+    pub fn get_column_with_primary_key(&self) -> Result<&Column> {
+        self.columns
+            .iter()
+            .find(|c| c.is_primary)
+            .ok_or_else(|| Error::Value(format!("Primary key not found in table {}", self.name)))
+    }
+
+    /// Gets the primary key value of a row
     pub fn get_row_primary_key(&self, row: &[Value]) -> Result<Value> {
-        Ok(Value::Null)
+        row.get(
+            self.columns
+                .iter()
+                .position(|c| c.is_primary)
+                .ok_or_else(|| Error::Value("Primary key not found".into()))?,
+        )
+        .cloned()
+        .ok_or_else(|| Error::Value("Primary key value not found for row".into()))
     }
 
     /// Validates the table schema.
@@ -63,7 +78,7 @@ impl Table {
         Ok(())
     }
 
-    /// Validates a row
+    /// Validates a row.
     pub fn validate_row(&self, row: &[Value], txn: &mut dyn SqlTxn) -> Result<()> {
         if row.len() != self.columns.len() {
             return Err(Error::Value(format!("Invalid row size for table {}", self.name)));
