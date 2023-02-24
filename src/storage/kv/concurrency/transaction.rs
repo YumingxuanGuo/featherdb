@@ -2,7 +2,7 @@ use std::{sync::{Arc, RwLock}};
 
 use crate::{storage::{Store, Range}, error::{Result, Error}, common::ValueType};
 
-use super::{Mode, snapshot::{Snapshot, self}, txnkey::TxnKey, mvcc::{serialize, deserialize}};
+use super::{Mode, snapshot::{Snapshot}, txnkey::TxnKey, mvcc::{serialize, deserialize}};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -156,5 +156,15 @@ impl Transaction {
             }
         }
         Ok(None)
+    }
+
+    /// Returns the transaction ID.
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
+
+    /// Returns the transaction mode.
+    pub fn get_mode(&self) -> Mode {
+        self.mode
     }
 }
