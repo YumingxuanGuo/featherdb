@@ -1,12 +1,10 @@
 // The SQL engine provides fundamental CRUD storage operations.
-mod mvcc_engine;
+mod kv_engine;
 pub mod raft_engine;
 
 use crate::{storage::kv::concurrency::Mode, error::Result};
 
-use super::{schema::Catalog, types::Row};
-
-
+use super::{schema::Catalog, types::{Row, Value}};
 
 /// The SQL engine interface
 pub trait Engine: Clone {
@@ -33,16 +31,16 @@ pub trait SqlTxn: Catalog {
     /// Commits the txn.
     fn commit(self) -> Result<()>;
     /// Rolls back the txn.
-    fn roolback(self) -> Result<()>;
+    fn rollback(self) -> Result<()>;
 
     /// Creates a new table row.
-    fn create() -> Result<()>;
+    fn create(&mut self, table_name: &str, row: Row) -> Result<()>;
     /// Reads a table row, if it exists.
-    fn read() -> Result<Option<Row>>;
+    fn read(&self, table_name: &str, id: &Value) -> Result<Option<Row>>;
     /// Updates a table row
-    fn update() -> Result<()>;
+    fn update(&mut self) -> Result<()>;
     /// Deletes a table row.
-    fn delete() -> Result<()>;
+    fn delete(&mut self) -> Result<()>;
 }
 
 /// An SQL session, which handles transaction control and simplified query execution
