@@ -47,7 +47,6 @@ fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
     Ok(bincode::deserialize(bytes)?)
 }
 
-
 /// An SQL transaction based on an MVCC key/value transaction
 pub struct KvTxn {
     txn: kv::Transaction,
@@ -59,7 +58,7 @@ impl KvTxn {
         Self { txn }
     }
 
-    /// Loads an index entry TODO:
+    /// Loads an index entry
     fn index_load(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>> {
         Ok(self
             .txn
@@ -69,7 +68,7 @@ impl KvTxn {
             .unwrap_or_else(HashSet::new))
     }
 
-    /// Saves an index entry. TODO:
+    /// Saves an index entry.
     fn index_save(
         &mut self,
         table: &str,
@@ -124,6 +123,54 @@ impl SqlTxn for KvTxn {
             index.insert(primary_key.clone());
             self.index_save(table_name, &column.name, &row[i], index)?;
         }
+        Ok(())
+    }
+
+    fn read(&self, table_name: &str, primary_key: &Value) -> Result<Option<Row>> {
+        self.txn
+            .get(&SqlKey::Row(table_name.into(), Some(primary_key.into())).encode())?
+            .map(|v| deserialize(&v))
+            .transpose()
+    }
+
+    fn update(&mut self, table_name: &str, primary_key: &Value, row: Row) -> Result<()> {
+        let table = self.read_table_or_error(table_name)?;
+        // If the primary key changes we do a delete and create, otherwise we replace the row.
+        if primary_key != &table.get_row_primary_key(&row)? {
+            self.delete()?;
+            self.create(table_name, row)?;
+        }
+
+        // Update indexes, knowing that the primary key has not changed
+        let indexes: Vec<_> = table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed).collect();
+        if !indexes.is_empty() {
+            let old_row = 
+                self.read(table_name, primary_key)?.ok_or_else(|| Error::Value(format!(
+                    "Primary key {} does not exist for table {}",
+                    primary_key, table.name
+            )))?;
+            for (i, column) in indexes {
+                if old_row[i] == row[i] {
+                    continue;
+                }
+                let mut index = self.index_load(table_name, &column.name, &old_row[i])?;
+                index.remove(primary_key);
+                self.index_save(table_name, &column.name, &old_row[i], index)?;
+
+                let mut index = self.index_load(table_name, &column.name, &row[i])?;
+                index.insert(primary_key.clone());
+                self.index_save(table_name, &column.name, &row[i], index)?;
+            }
+        }
+
+        table.validate_row(&row, self)?;
+        self.txn.set_or_insert(
+            &SqlKey::Row(table_name.into(), Some(primary_key.into())).encode(), 
+            serialize(&row)?,
+        )
+    }
+
+    fn delete(&mut self) -> Result<()> {
         Ok(())
     }
 }

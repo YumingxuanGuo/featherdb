@@ -36,9 +36,9 @@ pub trait SqlTxn: Catalog {
     /// Creates a new table row.
     fn create(&mut self, table_name: &str, row: Row) -> Result<()>;
     /// Reads a table row, if it exists.
-    fn read(&self, table_name: &str, id: &Value) -> Result<Option<Row>>;
+    fn read(&self, table_name: &str, primary_key: &Value) -> Result<Option<Row>>;
     /// Updates a table row
-    fn update(&mut self) -> Result<()>;
+    fn update(&mut self, table_name: &str, primary_key: &Value, row: Row) -> Result<()>;
     /// Deletes a table row.
     fn delete(&mut self) -> Result<()>;
 }
