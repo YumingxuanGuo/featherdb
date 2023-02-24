@@ -4,7 +4,7 @@ pub mod raft_engine;
 
 use crate::{storage::kv::concurrency::Mode, error::Result};
 
-use super::{schema::Catalog, types::{Row, Value}};
+use super::{schema::Catalog, types::{Row, Value, Expression}};
 
 /// The SQL engine interface
 pub trait Engine: Clone {
@@ -40,7 +40,10 @@ pub trait SqlTxn: Catalog {
     /// Updates a table row
     fn update(&mut self, table_name: &str, primary_key: &Value, row: Row) -> Result<()>;
     /// Deletes a table row.
-    fn delete(&mut self) -> Result<()>;
+    fn delete(&mut self, table_name: &str, primary_key: &Value) -> Result<()>;
+
+    /// Scans a table's rows
+    fn scan_row(&self, table: &str, filter: Option<Expression>) -> Result<Scan>;
 }
 
 /// An SQL session, which handles transaction control and simplified query execution
@@ -50,3 +53,5 @@ pub struct Session<E: Engine> {
     /// The current session transaction, if any
     txn: Option<E::Txn>,
 }
+
+pub type Scan = Box<dyn DoubleEndedIterator<Item = Result<Row>> + Send>;

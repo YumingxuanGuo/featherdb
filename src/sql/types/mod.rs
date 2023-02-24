@@ -1,3 +1,5 @@
+mod expression;
+pub use expression::Expression;
 
 use std::{hash::{Hash, Hasher}, borrow::Cow};
 

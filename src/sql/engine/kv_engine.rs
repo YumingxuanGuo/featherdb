@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet};
 
-use crate::{storage::kv, sql::types::Value};
+use crate::{storage::kv, sql::types::{Value, Expression}};
 use super::{Engine, SqlTxn, Catalog, Row};
 use crate::error::{Error, Result};
 
@@ -137,7 +137,7 @@ impl SqlTxn for KvTxn {
         let table = self.read_table_or_error(table_name)?;
         // If the primary key changes we do a delete and create, otherwise we replace the row.
         if primary_key != &table.get_row_primary_key(&row)? {
-            self.delete()?;
+            self.delete(table_name, primary_key)?;
             self.create(table_name, row)?;
         }
 
@@ -170,8 +170,50 @@ impl SqlTxn for KvTxn {
         )
     }
 
-    fn delete(&mut self) -> Result<()> {
-        Ok(())
+    fn delete(&mut self, table_name: &str, primary_key: &Value) -> Result<()> {
+        let table = self.read_table_or_error(table_name)?;
+
+        // Check if the value of the to-be-deleted primary key is being referenced.
+        for (ref_table_name, columns) in self.get_references(table_name, true)? {
+            let ref_table = self.read_table_or_error(&ref_table_name)?;
+            let columns = columns
+                .into_iter()
+                .map(|column_name| Ok((ref_table.get_column_index(&column_name)?, column_name)))
+                .collect::<Result<Vec<_>>>()?;
+            let mut scan = self.scan_row(&ref_table_name, None)?;
+            while let Some(row) = scan.next().transpose()? {
+                for (column_index, column_name) in &columns {
+                    // There are two invalid deleting senarios:
+                    // 1. PK's value is being referenced in another table;
+                    // 2. PK's value is being referenced in the current table, and is not in the same row to be deleted.
+                    if &row[*column_index] == primary_key && 
+                        (table.name != ref_table_name || primary_key != &table.get_row_primary_key(&row)?) {
+                        return Err(Error::Value(format!(
+                            "Primary key {} is referenced by table {} column {}",
+                            primary_key, ref_table_name, column_name
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Delete the indexes.
+        let indexes: Vec<_> = table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed).collect();
+        if !indexes.is_empty() {
+            if let Some(row) = self.read(&table_name, primary_key)? {
+                for (i, column) in indexes {
+                    let mut index = self.index_load(&table_name, &column.name, &row[i])?;
+                    index.remove(primary_key);
+                    self.index_save(&table_name, &column.name, &row[i], index);
+                }
+            }
+        }
+
+        self.txn.delete(&SqlKey::Row(table_name.into(), Some(primary_key.into())).encode())
+    }
+
+    fn scan_row(&self, table: &str, filter: Option<Expression>) -> Result<super::Scan> {
+        
     }
 }
 

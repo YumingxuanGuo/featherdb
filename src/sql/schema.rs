@@ -26,6 +26,25 @@ pub trait Catalog {
         self.read_table(table_name)?
             .ok_or_else(|| Error::Value(format!("Table {} does not exist", table_name)))
     }
+
+    /// Returns all references to a table, as (table_name,column) pairs.
+    fn get_references(&self, table_name: &str, with_self: bool) -> Result<Vec<(String, Vec<String>)>> {
+        Ok(self
+            .scan_tables()?
+            .filter(|t| with_self || t.name != table_name)
+            .map(|t| {
+                (
+                    t.name,
+                    t.columns
+                        .iter()
+                        .filter(|c| c.references.as_deref() == Some(table_name))
+                        .map(|c| c.name.clone())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .filter(|(_, cs)| !cs.is_empty())
+            .collect())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -38,6 +57,13 @@ impl Table {
     /// Creates a new table schema.
     pub fn new(name: String, columns: Vec<Column>) -> Result<Self> {
         Ok(Self { name, columns })
+    }
+
+    /// Fetches a column index by name
+    pub fn get_column_index(&self, name: &str) -> Result<usize> {
+        self.columns.iter().position(|c| c.name == name).ok_or_else(|| {
+            Error::Value(format!("Column {} not found in table {}", name, self.name))
+        })
     }
 
     /// Gets the table column with the primary key.
