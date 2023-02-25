@@ -1,8 +1,8 @@
-use std::{sync::{Arc, RwLock}};
+use std::{sync::{Arc, RwLock}, ops::{RangeBounds, Bound}};
 
-use crate::{storage::{Store, Range}, error::{Result, Error}, common::ValueType};
+use crate::{storage::{Store, Range, StorageScan}, error::{Result, Error}, common::ValueType};
 
-use super::{Mode, snapshot::{Snapshot}, txnkey::TxnKey, mvcc::{serialize, deserialize}};
+use super::{Mode, snapshot::{Snapshot}, txnkey::TxnKey, mvcc::{serialize, deserialize}, scan::Scan};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -156,6 +156,46 @@ impl Transaction {
             }
         }
         Ok(None)
+    }
+    
+    /// Scans a key range.
+    pub fn scan(&self, range: impl RangeBounds<Vec<u8>>) -> Result<StorageScan> {
+        let start = match range.start_bound() {
+            Bound::Excluded(k) => Bound::Excluded(TxnKey::Record(k.into(), std::u64::MAX).encode()),
+            Bound::Included(k) => Bound::Included(TxnKey::Record(k.into(), 0).encode()),
+            Bound::Unbounded => Bound::Included(TxnKey::Record(vec![].into(), 0).encode()),
+        };
+        let end = match range.end_bound() {
+            Bound::Excluded(k) => Bound::Excluded(TxnKey::Record(k.into(), 0).encode()),
+            Bound::Included(k) => Bound::Included(TxnKey::Record(k.into(), std::u64::MAX).encode()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+        let scan = self.store.read()?.scan(Range::from((start, end)));
+        Ok(Box::new(Scan::new(scan, self.snapshot.clone())))
+    }
+
+    /// Scans keys under a given prefix.
+    pub fn scan_prefix(&self, prefix: &[u8]) -> Result<StorageScan> {
+        if prefix.is_empty() {
+            return Err(Error::Internal("Scan prefix cannot be empty".into()));
+        }
+        let start = prefix.to_vec();
+        let mut end = start.clone();
+        for i in (0..end.len()).rev() {
+            match end[i] {
+                // If all 0xff we could in principle use Range::Unbounded, but it won't happen
+                0xff if i == 0 => return Err(Error::Internal("Invalid prefix scan range".into())),
+                0xff => {
+                    end[i] = 0x00;
+                    continue;
+                }
+                v => {
+                    end[i] = v + 1;
+                    break;
+                }
+            }
+        }
+        self.scan(start..end)
     }
 
     /// Returns the transaction ID.

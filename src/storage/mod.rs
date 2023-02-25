@@ -19,7 +19,7 @@ pub trait Store: Display + Send + Sync {
     fn delete(&mut self, key: &[u8]) -> Result<()>;
 
     /// Iterates over an ordered range of key/value pairs.
-    fn scan(&self, range: Range) -> Scan;
+    fn scan(&self, range: Range) -> StorageScan;
 
     /// Flushes any buffered data to the underlying storage medium.
     fn flush(&mut self) -> Result<()>;
@@ -68,7 +68,7 @@ impl RangeBounds<Vec<u8>> for Range {
 }
 
 /// Iterator over a key/value range.
-pub type Scan = Box<dyn DoubleEndedIterator<Item = Result<(KeyType, ValueType)>> + Send>;
+pub type StorageScan = Box<dyn DoubleEndedIterator<Item = Result<(KeyType, ValueType)>> + Send>;
 
 #[cfg(test)]
 trait TestSuite<S: Store> {

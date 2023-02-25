@@ -1,4 +1,4 @@
-use crate::storage::{Range, Scan, Store};
+use crate::storage::{Range, StorageScan, Store};
 use crate::error::Result;
 
 use std::collections::BTreeMap;
@@ -37,7 +37,7 @@ impl Store for StdBPlusTree {
         Ok(())
     }
 
-    fn scan(&self, range: Range) -> Scan {
+    fn scan(&self, range: Range) -> StorageScan {
         // FIXME Since the range iterator returns borrowed items it would require a read-lock for
         // the duration of the iteration. This is too coarse, so we buffer the entire iteration
         // here. An iterator with an arc-mutex should be used instead, which is able to resume

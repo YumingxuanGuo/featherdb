@@ -3,6 +3,7 @@ pub mod transaction;
 mod snapshot;
 mod txnkey;
 mod encoding;
+mod scan;
 
 use serde_derive::{Serialize, Deserialize};
 

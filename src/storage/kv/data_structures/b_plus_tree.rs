@@ -1,4 +1,4 @@
-use crate::storage::{Store, Scan, Range};
+use crate::storage::{Store, StorageScan, Range};
 use crate::error::{Error, Result};
 use crate::common::{KeyType, ValueType};
 
@@ -49,7 +49,7 @@ impl Store for BPlusTree {
         Ok(())
     }
 
-    fn scan(&self, range: Range) -> Scan {
+    fn scan(&self, range: Range) -> StorageScan {
         Box::new(Iter::new(self.root.clone(), range))
     }
 
