@@ -25,20 +25,11 @@ pub enum TxnKey<'a> {
 impl<'a> TxnKey<'a> {
     /// Encodes a key into a byte vector.
     pub fn encode(self) -> Vec<u8> {
-        // use crate::common::encoding::*;
-        match self {
-            Self::TxnNext => vec![0x01],
-            Self::TxnActive(id) => vec![0x02],
-            Self::TxnSnapshot(version) => vec![0x03],
-            Self::TxnUpdate(id, key) => vec![0x04],
-            Self::Metadata(key) => vec![0x05],
-            Self::Record(key, version) => vec![0xff],
-        }
+        unimplemented!()
     }
 
     /// Decodes a key from a byte representation.
     pub fn decode(mut bytes: &[u8]) -> Result<Self> {
-        // use encoding::*;
-        Ok(TxnKey::TxnNext)
+        unimplemented!()
     }
 }

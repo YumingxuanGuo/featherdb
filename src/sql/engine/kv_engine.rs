@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet};
 
-use crate::{storage::kv, sql::{types::{Value, Expression}, schema::Table}};
+use crate::{storage::kv, sql::{types::{Value, Expression}, schema::{Table, Tables}}};
 use super::{Engine, SqlTxn, Catalog, Row};
 use crate::error::{Error, Result};
 
@@ -139,6 +139,7 @@ impl SqlTxn for KvTxn {
         if primary_key != &table.get_row_primary_key(&row)? {
             self.delete(table_name, primary_key)?;
             self.create(table_name, row)?;
+            return Ok(())
         }
 
         // Update indexes, knowing that the primary key has not changed
@@ -213,7 +214,7 @@ impl SqlTxn for KvTxn {
     }
 
     fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<super::RowScan> {
-        let table = self.read_table_or_error(table_name)?;
+        self.read_table_or_error(table_name)?;
         Ok(Box::new(
             self.txn
                 .scan_prefix(&SqlKey::Row(table_name.into(), None).encode())?
@@ -235,6 +236,14 @@ impl SqlTxn for KvTxn {
                 }),
         ))
     }
+
+    fn scan_index(&self, table_name: &str, column_name: &str) -> Result<super::IndexScan> {
+        unimplemented!();
+    }
+
+    fn read_index(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>> {
+        unimplemented!()
+    }
 }
 
 impl Catalog for KvTxn {
@@ -249,6 +258,42 @@ impl Catalog for KvTxn {
     fn read_table(&self, table_name: &str) -> Result<Option<Table>> {
         self.txn.get(&SqlKey::Table(Some(table_name.into())).encode())?
             .map(|v| deserialize(&v)).transpose()
+    }
+
+    fn delete_table(&mut self, table_name: &str) -> Result<()> {
+        let table = self.read_table_or_error(table_name)?;
+
+        // Check if there are other dependencies.
+        if let Some((ref_table_name, columns)) = 
+            self.get_references(table_name, false)?.first() {
+            return Err(Error::Value(format!(
+                "Table {} is referenced by table {} column {}",
+                table_name, ref_table_name, columns[0]
+            )));
+        }
+
+        // Delete each row.
+        let mut scan = self.scan_row(table_name, None)?;
+        while let Some(row) = scan.next().transpose()? {
+            self.delete(table_name, &table.get_row_primary_key(&row)?)?;
+        }
+
+        // Delete the table meta info.
+        self.txn.delete(&SqlKey::Table(Some(table.name.into())).encode())
+    }
+
+    fn scan_tables(&self) -> Result<Tables> {
+        Ok(Box::new(
+            self.txn
+                .scan_prefix(&SqlKey::Table(None).encode())?
+                .map(|r| r.and_then(|(_, v)| deserialize(&v)))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter(),
+        ))
+    }
+
+    fn create_index(&mut self, table_name: &str, column_name: &str) -> Result<()> {
+        unimplemented!()
     }
 }
 
@@ -269,11 +314,11 @@ enum SqlKey<'a> {
 impl<'a> SqlKey<'a> {
     /// Encodes the key as a byte vector
     fn encode(self) -> Vec<u8> {
-        vec![0x01]
+        unimplemented!()
     }
 
     /// Decodes a key from a byte vector
     fn decode(mut bytes: &[u8]) -> Result<Self> {
-        Err(Error::Internal(format!("Unknown SQL key prefix")))
+        unimplemented!()
     }
 }

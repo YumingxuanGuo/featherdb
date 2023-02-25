@@ -2,6 +2,8 @@
 mod kv_engine;
 pub mod raft_engine;
 
+use std::collections::HashSet;
+
 use crate::{storage::kv::concurrency::Mode, error::Result};
 
 use super::{schema::Catalog, types::{Row, Value, Expression}};
@@ -44,6 +46,10 @@ pub trait SqlTxn: Catalog {
 
     /// Scans a table's rows
     fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<RowScan>;
+    /// Scans a column's index entries
+    fn scan_index(&self, table_name: &str, column_name: &str) -> Result<IndexScan>;
+    /// Reads an index entry, if it exists
+    fn read_index(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>>;
 }
 
 /// An SQL session, which handles transaction control and simplified query execution
@@ -56,3 +62,6 @@ pub struct Session<E: Engine> {
 
 /// A row scan iterator
 pub type RowScan = Box<dyn DoubleEndedIterator<Item = Result<Row>> + Send>;
+
+/// An index scan iterator
+pub type IndexScan = Box<dyn DoubleEndedIterator<Item = Result<(Value, HashSet<Value>)>> + Send>;
