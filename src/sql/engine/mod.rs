@@ -1,5 +1,6 @@
 // The SQL engine provides fundamental CRUD storage operations.
 mod kv_engine;
+mod state_machine;
 pub mod raft_engine;
 
 use std::collections::HashSet;
