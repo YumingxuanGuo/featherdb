@@ -23,6 +23,11 @@ impl KvEngine {
     pub fn new(kv: kv::MVCC) -> Self {
         Self { kv }
     }
+
+    /// Fetches an unversioned metadata value
+    pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.kv.get_metadata(key)
+    }
 }
 
 impl Engine for KvEngine {

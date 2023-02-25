@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::error::{Result};
 use crate::storage::Store;
 
+use super::txnkey::TxnKey;
 use super::{Mode, transaction::Transaction};
 use serde::{Serialize, Deserialize};
 
@@ -39,6 +40,11 @@ impl MVCC {
     /// Resumes a transaction with the given ID.
     pub fn resume(&self, id: u64) -> Result<Transaction> {
         Transaction::resume(self.store.clone(), id)
+    }
+
+    pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let session = self.store.read()?;
+        session.get(&TxnKey::Metadata(key.into()).encode())
     }
 }
 
