@@ -1,11 +1,10 @@
 // The SQL engine provides fundamental CRUD storage operations.
 mod kv_engine;
-mod state_machine;
 pub mod raft_engine;
 
 use std::collections::HashSet;
 
-use crate::{storage::kv::concurrency::Mode, error::Result};
+use crate::error::Result;
 
 use super::{schema::Catalog, types::{Row, Value, Expression}};
 
@@ -60,6 +59,9 @@ pub struct Session<E: Engine> {
     /// The current session transaction, if any
     txn: Option<E::Txn>,
 }
+
+/// The transaction mode
+pub type Mode = crate::storage::kv::concurrency::Mode;
 
 /// A row scan iterator
 pub type RowScan = Box<dyn DoubleEndedIterator<Item = Result<Row>> + Send>;
