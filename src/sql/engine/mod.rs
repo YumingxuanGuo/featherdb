@@ -43,7 +43,7 @@ pub trait SqlTxn: Catalog {
     fn delete(&mut self, table_name: &str, primary_key: &Value) -> Result<()>;
 
     /// Scans a table's rows
-    fn scan_row(&self, table: &str, filter: Option<Expression>) -> Result<Scan>;
+    fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<RowScan>;
 }
 
 /// An SQL session, which handles transaction control and simplified query execution
@@ -54,4 +54,5 @@ pub struct Session<E: Engine> {
     txn: Option<E::Txn>,
 }
 
-pub type Scan = Box<dyn DoubleEndedIterator<Item = Result<Row>> + Send>;
+/// A row scan iterator
+pub type RowScan = Box<dyn DoubleEndedIterator<Item = Result<Row>> + Send>;

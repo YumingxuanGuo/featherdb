@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet};
 
-use crate::{storage::kv, sql::types::{Value, Expression}};
+use crate::{storage::kv, sql::{types::{Value, Expression}, schema::Table}};
 use super::{Engine, SqlTxn, Catalog, Row};
 use crate::error::{Error, Result};
 
@@ -212,13 +212,44 @@ impl SqlTxn for KvTxn {
         self.txn.delete(&SqlKey::Row(table_name.into(), Some(primary_key.into())).encode())
     }
 
-    fn scan_row(&self, table: &str, filter: Option<Expression>) -> Result<super::Scan> {
-        
+    fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<super::RowScan> {
+        let table = self.read_table_or_error(table_name)?;
+        Ok(Box::new(
+            self.txn
+                .scan_prefix(&SqlKey::Row(table_name.into(), None).encode())?
+                .map(|r| r.and_then(|(_, v)| deserialize(&v)))
+                .filter_map(move |r| match r {
+                    Ok(row) => match &filter {
+                        Some(filter) => match filter.evaluate(Some(&row)) {
+                            Ok(Value::Boolean(b)) if b => Some(Ok(row)),
+                            Ok(Value::Boolean(_)) | Ok(Value::Null) => None,
+                            Ok(val) => Some(Err(Error::Value(format!(
+                                "Filter returned {}, expected boolean",
+                                val
+                            )))),
+                            Err(err) => Some(Err(err)),
+                        },
+                        None => Some(Ok(row)),
+                    },
+                    err => Some(err),
+                }),
+        ))
     }
 }
 
 impl Catalog for KvTxn {
+    fn create_table(&mut self, table: Table) -> Result<()> {
+        if self.read_table(&table.name)?.is_some() {
+            return Err(Error::Value(format!("Table {} already exists", table.name)));
+        }
+        table.validate_schema(self)?;
+        self.txn.set_or_insert(&SqlKey::Table(Some((&table.name).into())).encode(), serialize(&table)?)
+    }
 
+    fn read_table(&self, table_name: &str) -> Result<Option<Table>> {
+        self.txn.get(&SqlKey::Table(Some(table_name.into())).encode())?
+            .map(|v| deserialize(&v)).transpose()
+    }
 }
 
 
