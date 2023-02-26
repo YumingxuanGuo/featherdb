@@ -1,6 +1,6 @@
 use serde_derive::{Serialize, Deserialize};
 
-use crate::{raft, storage::kv, error::{Result, Error}, common::{deserialize, serialize}, sql::{types::{Row, Value}, schema::{Table, Catalog}}};
+use crate::{raft, storage::kv, error::{Result, Error}, common::{deserialize, serialize}, sql::{types::{Row, Value, Expression}, schema::{Table, Catalog}}};
 use super::{Engine as _, SqlTxn as _, Mode, kv_engine::KvEngine};
 
 /// An SQL engine that wraps a Raft cluster.
@@ -47,21 +47,21 @@ impl StateMachine {
             Mutation::Commit(txn_id) => serialize(&self.engine.resume(txn_id)?.commit()?),
             Mutation::Rollback(txn_id) => serialize(&self.engine.resume(txn_id)?.rollback()?),
 
-            Mutation::Create { txn_id, table, row } => {
-                serialize(&self.engine.resume(txn_id)?.create(&table, row)?)
+            Mutation::Create { txn_id, table_name, row } => {
+                serialize(&self.engine.resume(txn_id)?.create(&table_name, row)?)
             }
-            Mutation::Delete { txn_id, table, id } => {
-                serialize(&self.engine.resume(txn_id)?.delete(&table, &id)?)
+            Mutation::Delete { txn_id, table_name, primary_key } => {
+                serialize(&self.engine.resume(txn_id)?.delete(&table_name, &primary_key)?)
             }
-            Mutation::Update { txn_id, table, id, row } => {
-                serialize(&self.engine.resume(txn_id)?.update(&table, &id, row)?)
+            Mutation::Update { txn_id, table_name, primary_key, row } => {
+                serialize(&self.engine.resume(txn_id)?.update(&table_name, &primary_key, row)?)
             }
 
             Mutation::CreateTable { txn_id, schema } => {
                 serialize(&self.engine.resume(txn_id)?.create_table(schema)?)
             }
-            Mutation::DeleteTable { txn_id, table } => {
-                serialize(&self.engine.resume(txn_id)?.delete_table(&table)?)
+            Mutation::DeleteTable { txn_id, table_name } => {
+                serialize(&self.engine.resume(txn_id)?.delete_table(&table_name)?)
             }
         }
     }
@@ -86,7 +86,35 @@ impl raft::State for StateMachine {
     }
 
     fn query(&self, command: Vec<u8>) -> Result<Vec<u8>> {
-        todo!()
+        match deserialize(&command)? {
+            Query::Resume(id) => {
+                let txn = self.engine.resume(id)?;
+                serialize(&(txn.get_id(), txn.get_mode()))
+            },
+            Query::Read { txn_id, table_name, primary_key } => {
+                serialize(&self.engine.resume(txn_id)?.read(&table_name, &primary_key)?)
+            },
+            Query::ReadIndex { txn_id, table_name, column_name, value } => {
+                serialize(&self.engine.resume(txn_id)?.read_index(&table_name, &column_name, &value)?)
+            },
+            Query::Scan { txn_id, table_name, filter } => serialize(
+                &self.engine.resume(txn_id)?.scan_row(&table_name, filter)?.collect::<Result<Vec<_>>>()?
+            ),
+            Query::ScanIndex { txn_id, table_name, column_name } => serialize(
+                &self
+                    .engine
+                    .resume(txn_id)?
+                    .scan_index(&table_name, &column_name)?
+                    .collect::<Result<Vec<_>>>()?
+            ),
+            Query::Status => serialize(&self.engine.kv.get_status()?),
+            Query::ReadTable { txn_id, table_name } => {
+                serialize(&self.engine.resume(txn_id)?.read_table(&table_name)?)
+            },
+            Query::ScanTables { txn_id } => {
+                serialize(&self.engine.resume(txn_id)?.scan_tables()?.collect::<Vec<_>>())
+            }
+        }
     }
 }
 
@@ -101,14 +129,37 @@ enum Mutation {
     Rollback(u64),
 
     /// Creates a new row
-    Create { txn_id: u64, table: String, row: Row },
+    Create { txn_id: u64, table_name: String, row: Row },
     /// Deletes a row
-    Delete { txn_id: u64, table: String, id: Value },
+    Delete { txn_id: u64, table_name: String, primary_key: Value },
     /// Updates a row
-    Update { txn_id: u64, table: String, id: Value, row: Row },
+    Update { txn_id: u64, table_name: String, primary_key: Value, row: Row },
 
     /// Creates a table
     CreateTable { txn_id: u64, schema: Table },
     /// Deletes a table
-    DeleteTable { txn_id: u64, table: String },
+    DeleteTable { txn_id: u64, table_name: String },
+}
+
+/// A Raft state machine query
+#[derive(Clone, Serialize, Deserialize)]
+enum Query {
+    /// Fetches engine status
+    Status,
+    /// Resumes the active transaction with the given ID
+    Resume(u64),
+
+    /// Reads a row
+    Read { txn_id: u64, table_name: String, primary_key: Value },
+    /// Reads an index entry
+    ReadIndex { txn_id: u64, table_name: String, column_name: String, value: Value },
+    /// Scans a table's rows
+    Scan { txn_id: u64, table_name: String, filter: Option<Expression> },
+    /// Scans an index
+    ScanIndex { txn_id: u64, table_name: String, column_name: String },
+
+    /// Scans the tables
+    ScanTables { txn_id: u64 },
+    /// Reads a table
+    ReadTable { txn_id: u64, table_name: String },
 }

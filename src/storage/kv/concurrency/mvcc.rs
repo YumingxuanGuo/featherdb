@@ -1,11 +1,12 @@
 use std::sync::{Arc, RwLock};
 
 use crate::error::{Result};
-use crate::storage::Store;
+use crate::storage::{Store, Range};
 
 use super::txnkey::TxnKey;
 use super::{Mode, transaction::Transaction};
 use serde::{Serialize, Deserialize};
+use serde_derive::{Serialize, Deserialize};
 
 
 /// An MVCC-based transactional key-value store.
@@ -18,6 +19,14 @@ impl Clone for MVCC {
     fn clone(&self) -> Self {
         MVCC { store: self.store.clone() }
     }
+}
+
+/// MVCC status
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Status {
+    pub txns: u64,
+    pub txns_active: u64,
+    pub storage: String,
 }
 
 impl MVCC {
@@ -52,6 +61,23 @@ impl MVCC {
     pub fn set_metadata(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
         let mut session = self.store.write()?;
         session.set_or_insert(&TxnKey::Metadata(key.into()).encode(), value)
+    }
+
+    /// Returns engine status
+    pub fn get_status(&self) -> Result<Status> {
+        let store = self.store.read()?;
+        return Ok(Status {
+            txns: match store.get(&TxnKey::TxnNext.encode())? {
+                Some(ref v) => deserialize(v)?,
+                None => 1,
+            } - 1,
+            txns_active: store
+                .scan(Range::from(
+                    TxnKey::TxnActive(0).encode()..TxnKey::TxnActive(std::u64::MAX).encode(),
+                ))
+                .try_fold(0, |count, r| r.map(|_| count + 1))?,
+            storage: store.to_string(),
+        });
     }
 }
 
