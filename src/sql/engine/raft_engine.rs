@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use serde_derive::{Serialize, Deserialize};
 
 use crate::{raft, storage::kv, error::{Result, Error}, common::{deserialize, serialize}, sql::{types::{Row, Value, Expression}, schema::{Table, Catalog}}};
-use super::{Engine as _, SqlTxn as _, Mode, kv_engine::KvEngine};
+use super::{Engine as _, SqlTxn as _, Mode, kv_engine::KvEngine, RowScan, IndexScan};
 
 /// An SQL engine that wraps a Raft cluster.
 #[derive(Clone)]
@@ -18,6 +20,105 @@ impl RaftEngine {
     /// Creates an underlying state machine for a Raft engine.
     pub fn new_state(kv: kv::MVCC) -> Result<StateMachine> {
         StateMachine::new(kv)
+    }
+}
+
+impl super::Engine for RaftEngine {
+    type Txn = RaftTxn;
+
+    fn begin(&self, mode: Mode) -> Result<Self::Txn> {
+        todo!()
+    }
+
+    fn resume(&self, id: u64) -> Result<Self::Txn> {
+        todo!()
+    }
+}
+
+/// A Raft-based SQL transaction
+#[derive(Clone)]
+pub struct RaftTxn {
+    /// The underlying Raft cluster
+    client: raft::Client,
+    /// The transaction ID
+    id: u64,
+    /// The transaction mode
+    mode: Mode,
+}
+
+impl super::SqlTxn for RaftTxn {
+    fn get_id(&self) -> u64 {
+        todo!()
+    }
+
+    fn get_mode(&self) -> Mode {
+        todo!()
+    }
+
+    fn commit(self) -> Result<()> {
+        todo!()
+    }
+
+    fn rollback(self) -> Result<()> {
+        todo!()
+    }
+
+    fn create(&mut self, table_name: &str, row: Row) -> Result<()> {
+        todo!()
+    }
+
+    fn read(&self, table_name: &str, primary_key: &Value) -> Result<Option<Row>> {
+        todo!()
+    }
+
+    fn update(&mut self, table_name: &str, primary_key: &Value, row: Row) -> Result<()> {
+        todo!()
+    }
+
+    fn delete(&mut self, table_name: &str, primary_key: &Value) -> Result<()> {
+        todo!()
+    }
+
+    fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<RowScan> {
+        todo!()
+    }
+
+    fn scan_index(&self, table_name: &str, column_name: &str) -> Result<IndexScan> {
+        todo!()
+    }
+
+    fn read_index(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>> {
+        todo!()
+    }
+}
+
+impl Catalog for RaftTxn {
+    fn create_table(&mut self, table: Table) -> Result<()> {
+        todo!()
+    }
+
+    fn read_table(&self, table_name: &str) -> Result<Option<Table>> {
+        todo!()
+    }
+
+    fn delete_table(&mut self, table_name: &str) -> Result<()> {
+        todo!()
+    }
+
+    fn scan_tables(&self) -> Result<crate::sql::schema::Tables> {
+        todo!()
+    }
+
+    fn read_table_or_error(&self, table_name: &str) -> Result<Table> {
+        todo!()
+    }
+
+    fn create_index(&mut self, table_name: &str, column_name: &str) -> Result<()> {
+        todo!()
+    }
+
+    fn get_references(&self, table_name: &str, with_self: bool) -> Result<Vec<(String, Vec<String>)>> {
+        todo!()
     }
 }
 
