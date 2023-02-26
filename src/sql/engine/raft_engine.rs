@@ -27,11 +27,11 @@ impl super::Engine for RaftEngine {
     type Txn = RaftTxn;
 
     fn begin(&self, mode: Mode) -> Result<Self::Txn> {
-        todo!()
+        RaftTxn::begin(self.client.clone(), mode)
     }
 
     fn resume(&self, id: u64) -> Result<Self::Txn> {
-        todo!()
+        RaftTxn::resume(self.client.clone(), id)
     }
 }
 
@@ -44,6 +44,24 @@ pub struct RaftTxn {
     id: u64,
     /// The transaction mode
     mode: Mode,
+}
+
+impl RaftTxn {
+    /// Starts a transaction in the given mode.
+    fn begin(client: raft::Client, mode: Mode) -> Result<Self> {
+        let id = deserialize(&futures::executor::block_on(
+            client.mutate(serialize(&Mutation::Begin(mode))?)
+        )?)?;
+        Ok(Self { client, id, mode })
+    }
+
+    /// Resumes an active transaction.
+    fn resume(client: raft::Client, id: u64) -> Result<Self> {
+        let (id, mode) = deserialize(&futures::executor::block_on(
+            client.query(serialize(&Query::Resume(id))?)
+        )?)?;
+        Ok(Self { client, id, mode })
+    }
 }
 
 impl super::SqlTxn for RaftTxn {
