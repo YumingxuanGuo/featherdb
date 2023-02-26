@@ -28,6 +28,11 @@ impl KvEngine {
     pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.kv.get_metadata(key)
     }
+
+    /// Sets an unversioned metadata value
+    pub fn set_metadata(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
+        self.kv.set_metadata(key, value)
+    }
 }
 
 impl Engine for KvEngine {
@@ -243,11 +248,11 @@ impl SqlTxn for KvTxn {
     }
 
     fn scan_index(&self, table_name: &str, column_name: &str) -> Result<super::IndexScan> {
-        unimplemented!();
+        todo!()
     }
 
     fn read_index(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>> {
-        unimplemented!()
+        todo!()
     }
 }
 
@@ -298,7 +303,7 @@ impl Catalog for KvTxn {
     }
 
     fn create_index(&mut self, table_name: &str, column_name: &str) -> Result<()> {
-        unimplemented!()
+        todo!()
     }
 }
 

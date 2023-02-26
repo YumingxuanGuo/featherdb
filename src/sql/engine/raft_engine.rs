@@ -1,6 +1,6 @@
 use serde_derive::{Serialize, Deserialize};
 
-use crate::{raft, storage::kv, error::Result, common::{deserialize, serialize}, sql::{types::{Row, Value}, schema::{Table, Catalog}}};
+use crate::{raft, storage::kv, error::{Result, Error}, common::{deserialize, serialize}, sql::{types::{Row, Value}, schema::{Table, Catalog}}};
 use super::{Engine as _, SqlTxn as _, Mode, kv_engine::KvEngine};
 
 /// An SQL engine that wraps a Raft cluster.
@@ -68,12 +68,21 @@ impl StateMachine {
 }
 
 impl raft::State for StateMachine {
-    fn applied_index(&self) -> u64 {
-        todo!()
+    fn get_applied_index(&self) -> u64 {
+        self.applied_index
     }
 
     fn mutate(&mut self, index: u64, command: Vec<u8>) -> Result<Vec<u8>> {
-        todo!()
+        // We don't check that index == applied_index + 1, since the Raft log commits no-op
+        // entries during leader election which we need to ignore.
+        match self.apply(deserialize(&command)?) {
+            error @ Err(Error::Internal(_)) => error,
+            result => {
+                self.engine.set_metadata(b"applied_index", serialize(&index)?)?;
+                self.applied_index = index;
+                result
+            }
+        }
     }
 
     fn query(&self, command: Vec<u8>) -> Result<Vec<u8>> {

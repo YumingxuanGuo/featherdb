@@ -42,9 +42,16 @@ impl MVCC {
         Transaction::resume(self.store.clone(), id)
     }
 
+    /// Fetches an unversioned metadata value
     pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let session = self.store.read()?;
         session.get(&TxnKey::Metadata(key.into()).encode())
+    }
+
+    /// Sets an unversioned metadata value
+    pub fn set_metadata(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
+        let mut session = self.store.write()?;
+        session.set_or_insert(&TxnKey::Metadata(key.into()).encode(), value)
     }
 }
 
