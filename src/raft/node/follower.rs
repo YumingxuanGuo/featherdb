@@ -127,4 +127,14 @@ impl RoleNode<Follower> {
 
         Ok(self.into())
     }
+
+    /// Processes a logical clock tick.
+    pub fn tick(mut self) -> Result<Node> {
+        self.role.leader_seen_ticks += 1;
+        if self.role.leader_seen_ticks >= self.role.leader_seen_timeout {
+            Ok(self.become_candidate()?.into())
+        } else {
+            Ok(self.into())
+        }
+    }
 }

@@ -36,9 +36,15 @@ pub struct Status {
 
 /// The local Raft node state machine.
 pub enum Node {
-    Candidate(),
+    Candidate(RoleNode<Candidate>),
     Follower(RoleNode<Follower>),
     Leader(),
+}
+
+impl From<RoleNode<Candidate>> for Node {
+    fn from(rn: RoleNode<Candidate>) -> Self {
+        Node::Candidate(rn)
+    }
 }
 
 impl From<RoleNode<Follower>> for Node {
