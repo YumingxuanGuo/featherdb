@@ -1,7 +1,11 @@
 mod client;
+mod log;
 mod message;
+mod node;
 mod state;
 
+pub use self::log::{Log};
 pub use client::Client;
-pub use message::{Request, Response};
-pub use state::{State};
+pub use message::{Address, Event, Message, Request, Response};
+pub use node::{Node, Status};
+pub use state::{Instruction, State};

@@ -12,3 +12,9 @@ pub trait State: Send {
     /// Queries the state machine. All errors are propagated to the caller.
     fn query(&self, command: Vec<u8>) -> Result<Vec<u8>>;
 }
+
+#[derive(Debug, PartialEq)]
+/// A driver instruction.
+pub enum Instruction {
+    
+}

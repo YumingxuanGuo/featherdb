@@ -1,4 +1,5 @@
 pub mod kv;
+pub mod log;
 mod table;
 
 use std::fmt::Display;
