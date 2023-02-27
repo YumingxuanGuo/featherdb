@@ -29,6 +29,14 @@ pub enum Address {
 /// An event contained within messages.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
+    /// Leaders send periodic heartbeats to its followers.
+    Heartbeat {
+        /// The index of the leader's last committed log entry.
+        commit_index: u64,
+        /// The term of the leader's last committed log entry.
+        commit_term: u64,
+    },
+
     /// Candidates solicit votes from all peers.
     SolicitVote {
         // The index of the candidate's last stored log entry
@@ -36,6 +44,7 @@ pub enum Event {
         // The term of the candidate's last stored log entry
         last_log_term: u64,
     },
+    
     /// Followers may grant votes to candidates.
     GrantVote,
 }

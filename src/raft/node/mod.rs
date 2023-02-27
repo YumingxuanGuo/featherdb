@@ -1,5 +1,6 @@
 mod candidate;
 mod follower;
+mod leader;
 
 use std::collections::HashMap;
 
@@ -9,6 +10,7 @@ use tokio::sync::mpsc;
 use crate::error::Result;
 use follower::Follower;
 use candidate::Candidate;
+use leader::Leader;
 
 use super::{Log, Message, Instruction, Address, Event};
 

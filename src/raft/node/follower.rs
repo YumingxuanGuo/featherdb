@@ -95,6 +95,9 @@ impl RoleNode<Follower> {
 
         // Processes based on message event type.
         match msg.event {
+            Event::Heartbeat { commit_index, commit_term } => {
+                todo!()
+            }
             Event::SolicitVote { last_log_index, last_log_term } => {
                 // Refuses to vote if the candidate's term is smaller...
                 if msg.term < self.term {
