@@ -62,23 +62,33 @@ impl RaftTxn {
         )?)?;
         Ok(Self { client, id, mode })
     }
+
+    /// Executes a mutation
+    fn mutate(&self, mutation: Mutation) -> Result<Vec<u8>> {
+        futures::executor::block_on(self.client.mutate(serialize(&mutation)?))
+    }
+
+    /// Executes a query
+    fn query(&self, query: Query) -> Result<Vec<u8>> {
+        futures::executor::block_on(self.client.query(serialize(&query)?))
+    }
 }
 
 impl super::SqlTxn for RaftTxn {
     fn get_id(&self) -> u64 {
-        todo!()
+        self.id
     }
 
     fn get_mode(&self) -> Mode {
-        todo!()
+        self.mode
     }
 
     fn commit(self) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(Mutation::Commit(self.id))?)
     }
 
     fn rollback(self) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(Mutation::Rollback(self.id))?)
     }
 
     fn create(&mut self, table_name: &str, row: Row) -> Result<()> {
