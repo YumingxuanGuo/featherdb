@@ -160,30 +160,32 @@ impl super::SqlTxn for RaftTxn {
 
 impl Catalog for RaftTxn {
     fn create_table(&mut self, table: Table) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(
+            Mutation::CreateTable { txn_id: self.id, schema: table }
+        )?)
     }
 
     fn read_table(&self, table_name: &str) -> Result<Option<Table>> {
-        todo!()
+        deserialize(&self.query(
+            Query::ReadTable { txn_id: self.id, table_name: table_name.to_string() }
+        )?)
     }
 
     fn delete_table(&mut self, table_name: &str) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(
+            Mutation::DeleteTable { txn_id: self.id, table_name: table_name.to_string() }
+        )?)
     }
 
     fn scan_tables(&self) -> Result<crate::sql::schema::Tables> {
-        todo!()
-    }
-
-    fn read_table_or_error(&self, table_name: &str) -> Result<Table> {
-        todo!()
+        Ok(Box::new(
+            deserialize::<Vec<_>>(&self.query(
+                Query::ScanTables { txn_id: self.id }
+            )?)?.into_iter()
+        ))
     }
 
     fn create_index(&mut self, table_name: &str, column_name: &str) -> Result<()> {
-        todo!()
-    }
-
-    fn get_references(&self, table_name: &str, with_self: bool) -> Result<Vec<(String, Vec<String>)>> {
         todo!()
     }
 }
