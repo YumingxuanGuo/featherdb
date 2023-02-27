@@ -41,6 +41,12 @@ pub enum Node {
     Leader(),
 }
 
+impl From<RoleNode<Follower>> for Node {
+    fn from(rn: RoleNode<Follower>) -> Self {
+        Node::Follower(rn)
+    }
+}
+
 // A Raft node with role R
 pub struct RoleNode<R> {
     id: String,
@@ -72,8 +78,23 @@ impl<R> RoleNode<R> {
         })
     }
 
+    /// Aborts any proxied requests.
+    fn abort_proxied(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    /// Sends any queued requests to the given leader.
+    fn forward_queued(&mut self, leader: Address) -> Result<()> {
+        todo!()
+    }
+
     /// Sends an event
-    fn send(&self, to: Address, event: Event) -> Result<()> {
+    fn send(&self, dst: Address, event: Event) -> Result<()> {
+        todo!()
+    }
+
+    /// Validates a message
+    fn validate(&self, msg: &Message) -> Result<()> {
         todo!()
     }
 }

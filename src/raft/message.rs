@@ -3,7 +3,14 @@ use serde_derive::{Serialize, Deserialize};
 /// A message passed between Raft nodes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Message {
-    
+    /// The current term of the sender.
+    pub term: u64,
+    /// The sender address.
+    pub src_addr: Address,
+    /// The recipient address.
+    pub dst_addr: Address,
+    /// The message event.
+    pub event: Event,
 }
 
 /// A message address.
@@ -25,10 +32,12 @@ pub enum Event {
     /// Candidates solicit votes from all peers.
     SolicitVote {
         // The index of the candidate's last stored log entry
-        last_index: u64,
+        last_log_index: u64,
         // The term of the candidate's last stored log entry
-        last_term: u64,
+        last_log_term: u64,
     },
+    /// Followers may grant votes to candidates.
+    GrantVote,
 }
 
 /// A client request.
