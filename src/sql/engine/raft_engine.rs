@@ -92,31 +92,69 @@ impl super::SqlTxn for RaftTxn {
     }
 
     fn create(&mut self, table_name: &str, row: Row) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(Mutation::Create { 
+            txn_id: self.id, 
+            table_name: table_name.to_string(), 
+            row,
+        })?)
     }
 
     fn read(&self, table_name: &str, primary_key: &Value) -> Result<Option<Row>> {
-        todo!()
+        deserialize(&self.query(Query::Read { 
+            txn_id: self.id, 
+            table_name: table_name.to_string(), 
+            primary_key: primary_key.clone()
+        })?)
     }
 
     fn update(&mut self, table_name: &str, primary_key: &Value, row: Row) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(Mutation::Update { 
+            txn_id: self.id, 
+            table_name: table_name.to_string(), 
+            primary_key: primary_key.clone(),
+            row,
+        })?)
     }
 
     fn delete(&mut self, table_name: &str, primary_key: &Value) -> Result<()> {
-        todo!()
+        deserialize(&self.mutate(Mutation::Delete { 
+            txn_id: self.id, 
+            table_name: table_name.to_string(), 
+            primary_key: primary_key.clone()
+        })?)
     }
 
     fn scan_row(&self, table_name: &str, filter: Option<Expression>) -> Result<RowScan> {
-        todo!()
+        Ok(Box::new(
+            deserialize::<Vec<_>>(&self.query(Query::ScanRow { 
+                txn_id: self.id, 
+                table_name: table_name.to_string(), 
+                filter, 
+            })?)?
+            .into_iter()
+            .map(Ok),
+        ))
     }
 
     fn scan_index(&self, table_name: &str, column_name: &str) -> Result<IndexScan> {
-        todo!()
+        Ok(Box::new(
+            deserialize::<Vec<_>>(&self.query(Query::ScanIndex { 
+                txn_id: self.id, 
+                table_name: table_name.to_string(), 
+                column_name: column_name.to_string(),
+            })?)?
+            .into_iter()
+            .map(Ok),
+        ))
     }
 
     fn read_index(&self, table_name: &str, column_name: &str, value: &Value) -> Result<HashSet<Value>> {
-        todo!()
+        deserialize(&self.query(Query::ReadIndex { 
+            txn_id: self.id, 
+            table_name: table_name.to_string(), 
+            column_name: column_name.to_string(),
+            value: value.clone(),
+        })?)
     }
 }
 
@@ -226,7 +264,7 @@ impl raft::State for StateMachine {
             Query::ReadIndex { txn_id, table_name, column_name, value } => {
                 serialize(&self.engine.resume(txn_id)?.read_index(&table_name, &column_name, &value)?)
             },
-            Query::Scan { txn_id, table_name, filter } => serialize(
+            Query::ScanRow { txn_id, table_name, filter } => serialize(
                 &self.engine.resume(txn_id)?.scan_row(&table_name, filter)?.collect::<Result<Vec<_>>>()?
             ),
             Query::ScanIndex { txn_id, table_name, column_name } => serialize(
@@ -283,7 +321,7 @@ enum Query {
     /// Reads an index entry
     ReadIndex { txn_id: u64, table_name: String, column_name: String, value: Value },
     /// Scans a table's rows
-    Scan { txn_id: u64, table_name: String, filter: Option<Expression> },
+    ScanRow { txn_id: u64, table_name: String, filter: Option<Expression> },
     /// Scans an index
     ScanIndex { txn_id: u64, table_name: String, column_name: String },
 
