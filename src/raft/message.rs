@@ -1,5 +1,7 @@
 use serde_derive::{Serialize, Deserialize};
 
+use super::log::Entry;
+
 /// A message passed between Raft nodes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Message {
@@ -44,9 +46,28 @@ pub enum Event {
         // The term of the candidate's last stored log entry
         last_log_term: u64,
     },
-    
+
     /// Followers may grant votes to candidates.
     GrantVote,
+
+    /// Leaders replicate a set of log entries to followers.
+    ReplicateEntries {
+        /// The index of the log entry immediately preceding the submitted commands.
+        prev_index: u64,
+        /// The term of the log entry immediately preceding the submitted commands.
+        prev_term: u64,
+        /// Commands to replicate.
+        entries: Vec<Entry>,
+    },
+
+    /// Followers may accept a set of log entries from a leader.
+    AcceptEntries {
+        /// The index of the last log entry.
+        match_index: u64,
+    },
+
+    /// Followers may also reject a set of log entries from a leader.
+    RejectEntries,
 }
 
 /// A client request.

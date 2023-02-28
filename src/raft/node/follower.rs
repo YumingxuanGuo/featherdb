@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::{info, warn, debug};
 use rand::Rng;
 
 use crate::error::Error;
@@ -70,9 +70,9 @@ impl RoleNode<Follower> {
     }
 
     /// Checks if an address is the current leader.
-    fn is_my_leader(&self, src: &Address) -> bool {
+    fn is_my_leader(&self, src_addr: &Address) -> bool {
         matches!(
-            (&self.role.leader, src), 
+            (&self.role.leader, src_addr), 
             (Some(leader), Address::Peer(src)) if leader == src
         )
     }
@@ -124,8 +124,23 @@ impl RoleNode<Follower> {
                 }
             },
 
+            Event::ReplicateEntries { prev_index, prev_term, entries } => {
+                if self.is_my_leader(&msg.src_addr) {
+                    if prev_index > 0 && self.log.has(prev_index, prev_term)? {
+                        debug!("Rejecting log entries at base {}", prev_index);
+                        self.send(msg.src_addr, Event::RejectEntries)?
+                    } else {
+                        let match_index = self.log.splice(entries)?;
+                        self.send(msg.src_addr, Event::AcceptEntries { match_index })?
+                    }
+                }
+            },
+
             // Ignore votes which are usually strays from the previous election that we lost.
-            Event::GrantVote => {}
+            Event::GrantVote => {},
+
+            Event::AcceptEntries { .. }
+            | Event::RejectEntries { .. } => warn!("Received unexpected message {:?}", msg),
         }
 
         Ok(self.into())

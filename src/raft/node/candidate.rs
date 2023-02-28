@@ -7,6 +7,8 @@ use super::{ELECTION_TIMEOUT_MIN, ELECTION_TIMEOUT_MAX, RoleNode, Follower, Lead
 
 
 
+/// A candidate is campaigning to become a leader.
+#[derive(Debug)]
 pub struct Candidate {
     /// Ticks elapsed since election start.
     election_ticks: u64,
@@ -92,7 +94,11 @@ impl RoleNode<Candidate> {
             },
 
             // Ignores other candidates when we are in an election.
-            Event::SolicitVote { .. } => {}
+            Event::SolicitVote { .. } => {},
+
+            Event::ReplicateEntries { .. }
+            | Event::AcceptEntries { .. } 
+            | Event::RejectEntries { .. } => warn!("Received unexpected message {:?}", msg),
         }
 
         Ok(self.into())

@@ -16,5 +16,6 @@ pub trait State: Send {
 #[derive(Debug, PartialEq)]
 /// A driver instruction.
 pub enum Instruction {
-    
+    /// Abort all pending operations, e.g. due to leader change.
+    Abort,
 }

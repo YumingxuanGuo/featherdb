@@ -1,23 +1,88 @@
-use crate::error::Result;
+use std::collections::HashMap;
 
-use super::RoleNode;
+use log::{info, debug};
+
+use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL};
+use crate::{error::{Result, Error}, raft::{Instruction, Address, Event}};
 
 
 
+// A leader serves requests and replicates the log to followers.
+#[derive(Debug)]
 pub struct Leader {
-
+    /// Number of ticks since last heartbeat.
+    heartbeat_ticks: u64,
+    /// The next index to replicate to a peer.
+    peer_next_index: HashMap<String, u64>,
+    /// The last index known to be replicated on a peer.
+    peer_match_index: HashMap<String, u64>,
 }
 
 impl Leader {
     /// Creates a new leader role.
     pub fn new(peers: Vec<String>, last_index: u64) -> Self {
-        todo!()
+        let mut leader = Self {
+            heartbeat_ticks: 0,
+            peer_next_index: HashMap::new(),
+            peer_match_index: HashMap::new(),
+        };
+        for peer in peers {
+            leader.peer_next_index.insert(peer.clone(), last_index + 1);
+            leader.peer_match_index.insert(peer.clone(), 0);
+        }
+        leader
     }
 }
 
 impl RoleNode<Leader> {
+    /// Transforms the leader into a follower
+    fn become_follower(mut self, term: u64, leader: &str) -> Result<RoleNode<Follower>> {
+        info!("Discovered new leader {} for term {}, following", leader, term);
+        self.term = term;
+        self.log.save_term(term, None)?;
+        self.state_tx.send(Instruction::Abort)?;
+        self.become_role(Follower::new(Some(leader), None))
+    }
+    
     /// Appends an entry to the log and replicates it to peers.
     pub fn append(&mut self, command: Option<Vec<u8>>) -> Result<u64> {
+        let entry = self.log.append(self.term, command)?;
+        for peer in self.peers.iter() {
+            self.replicate(peer)?;
+        }
+        Ok(entry.index)
+    }
+
+    /// Commits any pending log entries.
+    fn commit(&mut self) -> Result<u64> {
+        let mut match_indexes = vec![self.log.last_index];
+        match_indexes.extend(self.role.peer_match_index.values());
+        match_indexes.sort_unstable();
+        match_indexes.reverse();
+        let quorum_index = match_indexes[self.quorum() as usize - 1];
         todo!()
+    }
+
+    /// Replicates the log to a peer.
+    fn replicate(&self, peer: &str) -> Result<()> {
+        let next_index = self
+            .role
+            .peer_next_index
+            .get(peer)
+            .cloned()
+            .ok_or_else(|| Error::Internal(format!("Unknown peer {}", peer)))?;
+        let prev_index = if next_index > 0 { next_index - 1 } else { 0 };
+        let prev_term = match self.log.get(prev_index)? {
+            Some(prev_entry) => prev_entry.term,
+            None if prev_index == 0 => 0,
+            None => return Err(Error::Internal(format!("Missing previous entry {}", prev_index))),
+        };
+        let entries = self.log.scan(next_index..).collect::<Result<Vec<_>>>()?;
+        debug!("Replicating {} entries since {} to {}", entries.len(), prev_index, peer);
+        self.send(
+            Address::Peer(peer.to_string()),
+            Event::ReplicateEntries { prev_index, prev_term, entries },
+        )?;
+        Ok(())
     }
 }
