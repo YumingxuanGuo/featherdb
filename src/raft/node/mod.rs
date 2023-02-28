@@ -4,6 +4,7 @@ mod leader;
 
 use std::collections::HashMap;
 
+use log::debug;
 use serde_derive::{Serialize, Deserialize};
 use tokio::sync::mpsc;
 
@@ -40,7 +41,14 @@ pub struct Status {
 pub enum Node {
     Candidate(RoleNode<Candidate>),
     Follower(RoleNode<Follower>),
-    Leader(),
+    Leader(RoleNode<Leader>),
+}
+
+impl Node {
+    /// Processes a message.
+    pub fn step(self, msg: Message) -> Result<Self> {
+        todo!()
+    }
 }
 
 impl From<RoleNode<Candidate>> for Node {
@@ -54,6 +62,13 @@ impl From<RoleNode<Follower>> for Node {
         Node::Follower(rn)
     }
 }
+
+impl From<RoleNode<Leader>> for Node {
+    fn from(rn: RoleNode<Leader>) -> Self {
+        Node::Leader(rn)
+    }
+}
+
 
 // A Raft node with role R
 pub struct RoleNode<R> {
@@ -96,12 +111,17 @@ impl<R> RoleNode<R> {
         todo!()
     }
 
-    /// Sends an event
+    /// Returns the quorum size of the cluster.
+    fn quorum(&self) -> u64 {
+        (self.peers.len() as u64 + 1) / 2 + 1
+    }
+
+    /// Sends an event.
     fn send(&self, dst: Address, event: Event) -> Result<()> {
         todo!()
     }
 
-    /// Validates a message
+    /// Validates a message.
     fn validate(&self, msg: &Message) -> Result<()> {
         todo!()
     }

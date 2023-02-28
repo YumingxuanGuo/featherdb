@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn, debug};
 use rand::Rng;
 
 use crate::{error::Result, raft::{Address, Event, Message}};
@@ -60,6 +60,41 @@ impl RoleNode<Candidate> {
 
     /// Processes a message.
     pub fn step(mut self, msg: Message) -> Result<Node> {
-        todo!()
+        // Pre-processing when receiving a message.
+        if let Err(err) = self.validate(&msg) {
+            warn!("Ignoring invalid message: {}", err);
+            return Ok(self.into());
+        }
+        if msg.term > self.term {
+            if let Address::Peer(src) = &msg.src_addr {
+                return self.become_follower(msg.term, src)?.step(msg);
+            }
+        }
+
+        match msg.event {
+            Event::Heartbeat { .. } => {
+                if let Address::Peer(src) = &msg.src_addr {
+                    return self.become_follower(msg.term, src)?.step(msg);
+                }
+            },
+
+            Event::GrantVote => {
+                debug!("Received term {} vote from {:?}", self.term, msg.src_addr);
+                self.role.vote_count += 1;
+                if self.role.vote_count >= self.quorum() {
+                    let queued = std::mem::take(&mut self.queued_reqs);
+                    let mut node: Node = self.become_leader()?.into();
+                    for (src_addr, event) in queued {
+                        node = node.step(Message { term: 0, src_addr, dst_addr: Address::Local, event })?;
+                    }
+                    return Ok(node);
+                }
+            },
+
+            // Ignores other candidates when we are in an election.
+            Event::SolicitVote { .. } => {}
+        }
+
+        Ok(self.into())
     }
 }
