@@ -32,6 +32,11 @@ impl Log {
         todo!()
     }
 
+    /// Commits entries up to and including an index.
+    pub fn commit(&mut self, index: u64) -> Result<u64> {
+        todo!()
+    }
+
     /// Fetches an entry at an index
     pub fn get(&self, index: u64) -> Result<Option<Entry>> {
         todo!()

@@ -1,5 +1,7 @@
 use crate::error::Result;
 
+use super::log::Entry;
+
 /// A Raft-managed state machine.
 pub trait State: Send {
     /// Returns the last applied index from the state machine, used when initializing the driver.
@@ -18,4 +20,6 @@ pub trait State: Send {
 pub enum Instruction {
     /// Abort all pending operations, e.g. due to leader change.
     Abort,
+    /// Apply a log entry.
+    Apply { entry: Entry },
 }

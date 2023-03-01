@@ -60,7 +60,22 @@ impl RoleNode<Leader> {
         match_indexes.sort_unstable();
         match_indexes.reverse();
         let quorum_index = match_indexes[self.quorum() as usize - 1];
-        todo!()
+        
+        // We can only safely commit up to an entry from our own term, see figure 8 in Raft paper.
+        if quorum_index > self.log.commit_index {
+            if let Some(entry) = self.log.get(quorum_index)? {
+                if entry.term == self.term {
+                    let commit_index = self.log.commit_index;
+                    self.log.commit(quorum_index)?;
+                    let mut scan = 
+                        self.log.scan((commit_index + 1)..=self.log.commit_index);
+                    while let Some(entry) = scan.next().transpose()? {
+                        self.state_tx.send(Instruction::Apply { entry })?;
+                    }
+                }
+            }
+        }
+        Ok(self.log.commit_index)
     }
 
     /// Replicates the log to a peer.
