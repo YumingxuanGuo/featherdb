@@ -2,7 +2,7 @@ use log::{info, warn, debug};
 use rand::Rng;
 
 use crate::error::Error;
-use crate::raft::Message;
+use crate::raft::{Message, Instruction};
 use crate::{error::Result};
 use super::super::{Address, Event};
 
@@ -96,8 +96,22 @@ impl RoleNode<Follower> {
         // Processes based on message event type.
         match msg.event {
             Event::Heartbeat { commit_index, commit_term } => {
-                todo!()
-            }
+                if self.is_my_leader(&msg.src_addr) {
+                    // Apply newly committed entries in the state machine.
+                    let has_committed = self.log.has(commit_index, commit_term)?;
+                    if has_committed && commit_index > self.log.commit_index {
+                        let last_commit_index = self.log.commit_index;
+                        self.log.commit(commit_index)?;
+                        let mut scan = 
+                            self.log.scan((last_commit_index + 1)..=commit_index);
+                        while let Some(entry) = scan.next().transpose()? {
+                            self.state_tx.send(Instruction::Apply { entry })?;
+                        }
+                    }
+                    self.send(msg.src_addr, Event::ConfirmLeader { commit_index, has_committed })?;
+                }
+            },
+
             Event::SolicitVote { last_log_index, last_log_term } => {
                 // Refuses to vote if the candidate's term is smaller...
                 if msg.term < self.term {
@@ -139,7 +153,8 @@ impl RoleNode<Follower> {
             // Ignore votes which are usually strays from the previous election that we lost.
             Event::GrantVote => {},
 
-            Event::AcceptEntries { .. }
+            Event::ConfirmLeader { .. }
+            | Event::AcceptEntries { .. }
             | Event::RejectEntries { .. } => warn!("Received unexpected message {:?}", msg),
         }
 

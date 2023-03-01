@@ -96,7 +96,8 @@ impl RoleNode<Candidate> {
             // Ignores other candidates when we are in an election.
             Event::SolicitVote { .. } => {},
 
-            Event::ReplicateEntries { .. }
+            Event::ConfirmLeader { .. }
+            | Event::ReplicateEntries { .. }
             | Event::AcceptEntries { .. } 
             | Event::RejectEntries { .. } => warn!("Received unexpected message {:?}", msg),
         }

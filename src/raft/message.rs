@@ -38,6 +38,16 @@ pub enum Event {
         /// The term of the leader's last committed log entry.
         commit_term: u64,
     },
+    
+    /// Followers confirm loyalty to leader after heartbeats.
+    ConfirmLeader {
+        /// The commit_index of the original leader heartbeat, to confirm
+        /// read requests.
+        commit_index: u64,
+        /// If false, the follower does not have the entry at commit_index
+        /// and would like the leader to replicate it.
+        has_committed: bool,
+    },
 
     /// Candidates solicit votes from all peers.
     SolicitVote {

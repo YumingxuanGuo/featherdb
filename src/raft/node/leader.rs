@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use log::{info, debug};
+use log::{info, debug, warn};
 
 use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL};
-use crate::{error::{Result, Error}, raft::{Instruction, Address, Event}};
+use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message}};
 
 
 
@@ -99,5 +99,63 @@ impl RoleNode<Leader> {
             Event::ReplicateEntries { prev_index, prev_term, entries },
         )?;
         Ok(())
+    }
+
+    /// Process a message.
+    pub fn step(mut self, msg: Message) -> Result<Node> {
+        if let Err(err) = self.validate(&msg) {
+            warn!("Ignoring invalid message: {}", err);
+            return Ok(self.into());
+        }
+        if msg.term > self.term {
+            if let Address::Peer(src) = &msg.src_addr {
+                return self.become_follower(msg.term, src)?.step(msg);
+            }
+        }
+
+        match msg.event {
+            Event::ConfirmLeader { commit_index, has_committed } => {
+                if let Address::Peer(src) = msg.src_addr.clone() {
+                    self.state_tx.send(Instruction::Vote {
+                        term: msg.term,
+                        index: commit_index,
+                        address: msg.src_addr,
+                    })?;
+                    if !has_committed {
+                        self.replicate(&src)?;
+                    }
+                }
+            },
+
+            Event::AcceptEntries { match_index } => {
+                if let Address::Peer(src) = msg.src_addr {
+                    self.role.peer_next_index.insert(src.clone(), match_index + 1);
+                    self.role.peer_match_index.insert(src, match_index);
+                }
+                self.commit()?;
+            },
+
+            Event::RejectEntries => {
+                // TODO: Possible optimization.
+                if let Address::Peer(src) = msg.src_addr {
+                    self.role.peer_next_index
+                        .entry(src.clone())
+                        .and_modify(|i| {
+                            if *i > 1 { *i -= 1; }
+                        });
+                    self.replicate(&src)?;
+                }
+            },
+
+            // We ignore these messages, since they are typically additional votes from the previous
+            // election that we won after a quorum.
+            Event::SolicitVote { .. }
+            | Event::GrantVote => {},
+
+            Event::Heartbeat { .. }
+            | Event::ReplicateEntries { .. } => warn!("Received unexpected message {:?}", msg),
+        }
+
+        Ok(self.into())
     }
 }

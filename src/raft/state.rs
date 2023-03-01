@@ -1,6 +1,6 @@
 use crate::error::Result;
 
-use super::log::Entry;
+use super::{log::Entry, Address};
 
 /// A Raft-managed state machine.
 pub trait State: Send {
@@ -22,4 +22,6 @@ pub enum Instruction {
     Abort,
     /// Apply a log entry.
     Apply { entry: Entry },
+    /// Votes for queries at the given term and commit index. TODO: What is this?
+    Vote { term: u64, index: u64, address: Address },
 }
