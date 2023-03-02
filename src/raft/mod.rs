@@ -2,6 +2,7 @@ mod client;
 mod log;
 mod message;
 mod node;
+mod server;
 mod state;
 
 pub use self::log::{Log};
