@@ -35,8 +35,7 @@ impl RoleNode<Candidate> {
         info!("Discovered leader {} for term {}, following", leader, term);
         self.term = term;
         self.log.save_term(term, None)?;
-        let mut node = 
-            self.become_role(Follower::new(Some(leader), None))?;
+        let mut node = self.become_role(Follower::new(Some(leader), None))?;
         node.abort_proxied()?;
         node.forward_queued(Address::Peer(leader.to_string()))?;
         Ok(node)
@@ -104,4 +103,26 @@ impl RoleNode<Candidate> {
 
         Ok(self.into())
     }
+
+     /// Processes a logical clock tick.
+     pub fn tick(mut self) -> Result<Node> {
+        self.role.election_ticks += 1;
+
+        // If election times out, start a new election for the next term.
+        if self.role.election_ticks >= self.role.election_timeout {
+            info!("Election timed out, starting new election for term {}", self.term + 1);
+            self.term += 1;
+            self.log.save_term(self.term, None)?;
+            self.role = Candidate::new();
+            self.send(
+                Address::Peers, 
+                Event::SolicitVote {
+                    last_log_index: self.log.last_index,
+                    last_log_term: self.log.last_term,
+                }
+            )?;
+        }
+
+        Ok(self.into())
+     }
 }
