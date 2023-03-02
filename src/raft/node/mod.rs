@@ -4,16 +4,16 @@ mod leader;
 
 use std::collections::HashMap;
 
-use log::debug;
+use log::{debug, info};
 use serde_derive::{Serialize, Deserialize};
 use tokio::sync::mpsc;
 
-use crate::error::Result;
+use crate::error::{Result, Error};
 use follower::Follower;
 use candidate::Candidate;
 use leader::Leader;
 
-use super::{Log, Message, Instruction, Address, Event};
+use super::{Log, Message, Instruction, Address, Event, State, state::Driver};
 
 /// The interval between leader heartbeats, in ticks.
 const HEARTBEAT_INTERVAL: u64 = 1;
@@ -45,6 +45,52 @@ pub enum Node {
 }
 
 impl Node {
+    /// Creates a new Raft node, starting as a follower, or leader if no peers.
+    pub async fn new(
+        id: &str,
+        peers: Vec<String>,
+        log: Log,
+        mut state: Box<dyn State>,
+        node_tx: mpsc::UnboundedSender<Message>,
+    ) -> Result<Self> {
+        // Assert that the applied index is no greater than the commit index
+        let applied_index = state.get_applied_index();
+        if applied_index > log.commit_index {
+            return Err(Error::Internal(format!(
+                "State machine applied index {} greater than log committed index {}",
+                applied_index, log.commit_index
+            )));
+        }
+
+        let (state_tx, state_rx) = mpsc::unbounded_channel();
+        let mut driver = Driver::new(state_rx, node_tx.clone());
+        if log.commit_index > applied_index {
+            info!("Replaying log entries {} to {}", applied_index + 1, log.commit_index);
+            driver.replay(&mut *state, log.scan((applied_index + 1)..=log.commit_index))?;
+        }
+        tokio::spawn(driver.drive(state));
+
+        let (term, voted_for) = log.load_term()?;
+        let node = RoleNode {
+            id: id.to_owned(),
+            peers,
+            term,
+            log,
+            node_tx,
+            state_tx,
+            queued_reqs: Vec::new(),
+            proxied_reqs: HashMap::new(),
+            role: Follower::new(None, voted_for.as_deref()),
+        };
+        if node.peers.is_empty() {
+            info!("No peers specified, starting as leader");
+            let last_index = node.log.last_index;
+            Ok(node.become_role(Leader::new(vec![], last_index))?.into())
+        } else {
+            Ok(node.into())
+        }
+    }
+
     /// Processes a message.
     pub fn step(self, msg: Message) -> Result<Self> {
         todo!()

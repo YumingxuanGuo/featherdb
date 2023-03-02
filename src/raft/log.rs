@@ -5,7 +5,7 @@ use serde_derive::{Serialize, Deserialize};
 use crate::{storage::log, error::Result};
 
 /// A log scan
-pub type Scan<'a> = Box<dyn Iterator<Item = Result<Entry>> + 'a>;
+pub type LogScan<'a> = Box<dyn Iterator<Item = Result<Entry>> + 'a>;
 
 /// The replicated Raft log
 pub struct Log {
@@ -48,7 +48,7 @@ impl Log {
     }
 
     /// Iterates over log entries
-    pub fn scan(&self, range: impl RangeBounds<u64>) -> Scan {
+    pub fn scan(&self, range: impl RangeBounds<u64>) -> LogScan {
         todo!()
     }
 
@@ -56,6 +56,12 @@ impl Log {
     /// must be at most last_index+1. If an entry does not exist, append it. If an existing entry
     /// has a term mismatch, replace it and all following entries.
     pub fn splice(&mut self, entries: Vec<Entry>) -> Result<u64> {
+        todo!()
+    }
+
+    /// Loads information about the most recent term known by the log, containing the term number (0
+    /// if none) and candidate voted for in current term (if any).
+    pub fn load_term(&self) -> Result<(u64, Option<String>)> {
         todo!()
     }
 }
