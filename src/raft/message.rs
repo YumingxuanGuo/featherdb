@@ -80,6 +80,14 @@ pub enum Event {
 
     /// Followers may also reject a set of log entries from a leader.
     RejectEntries,
+    
+    /// A client request.
+    ClientRequest {
+        /// The request ID.
+        id: Vec<u8>,
+        /// The request.
+        request: Request,
+    },
 
     /// A client response.
     ClientResponse {

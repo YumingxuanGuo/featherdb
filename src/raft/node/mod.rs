@@ -185,12 +185,38 @@ impl<R> RoleNode<R> {
     }
 
     /// Sends an event.
-    fn send(&self, dst: Address, event: Event) -> Result<()> {
-        todo!()
+    fn send(&self, dst_addr: Address, event: Event) -> Result<()> {
+        let msg = Message { term: self.term, src_addr: Address::Local, dst_addr, event };
+        debug!("Sending {:?}", msg);
+        Ok(self.node_tx.send(msg)?)
     }
 
     /// Validates a message.
     fn validate(&self, msg: &Message) -> Result<()> {
-        todo!()
+        match msg.src_addr {
+            Address::Peers => return Err(Error::Internal("Message from broadcast address".into())),
+            Address::Local => return Err(Error::Internal("Message from local node".into())),
+            Address::Client if !matches!(msg.event, Event::ClientRequest { .. }) => {
+                return Err(Error::Internal("Non-request message from client".into()));
+            },
+            _ => {}
+        }
+
+        // Allowing requests and responses form past terms is fine, since they don't rely on it
+        if msg.term < self.term &&
+            !matches!(msg.event, Event::ClientRequest { .. } | Event::ClientResponse { .. })
+        {
+            return Err(Error::Internal(format!("Message from past term {}", msg.term)));
+        }
+
+        match &msg.dst_addr {
+            Address::Peer(id) if id == &self.id => Ok(()),
+            Address::Local => Ok(()),
+            Address::Peers => Ok(()),
+            Address::Peer(id) => {
+                Err(Error::Internal(format!("Received message for other node {}", id)))
+            },
+            Address::Client => Err(Error::Internal("Received message for client".into())),
+        }
     }
 }

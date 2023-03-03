@@ -91,6 +91,10 @@ impl RoleNode<Candidate> {
                     return Ok(node);
                 }
             },
+            
+            Event::ClientRequest { .. } => {
+                todo!()
+            }
 
             Event::ClientResponse { id, mut response } => {
                 if let Ok(Response::Status(ref mut status)) = response {

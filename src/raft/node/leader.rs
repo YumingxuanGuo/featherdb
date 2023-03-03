@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use log::{info, debug, warn};
 
 use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL};
-use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message, Response}};
+use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message, Response, Request}};
 
 
 
@@ -145,6 +145,10 @@ impl RoleNode<Leader> {
                     self.replicate(&src)?;
                 }
             },
+            
+            Event::ClientRequest { .. } => {
+                todo!()
+            }
 
             Event::ClientResponse { id, mut response } => {
                 if let Ok(Response::Status(ref mut status)) = response {
