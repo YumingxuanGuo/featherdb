@@ -176,7 +176,22 @@ impl<R> RoleNode<R> {
 
     /// Sends any queued requests to the given leader.
     fn forward_queued(&mut self, leader: Address) -> Result<()> {
-        todo!()
+        for (src_addr, event) in std::mem::take(&mut self.queued_reqs) {
+            if let Event::ClientRequest { id, .. } = &event {
+                self.proxied_reqs.insert(id.clone(), src_addr.clone());
+                self.node_tx.send(Message {
+                    src_addr: match src_addr {
+                        Address::Client => Address::Local,
+                        address => address
+                    },
+                    dst_addr: leader.clone(),
+                    term: 0,
+                    event,
+                    }
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the quorum size of the cluster.
