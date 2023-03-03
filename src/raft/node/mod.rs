@@ -62,6 +62,7 @@ impl Node {
             )));
         }
 
+        // Apply committed entries that has not yet been applied.
         let (state_tx, state_rx) = mpsc::unbounded_channel();
         let mut driver = Driver::new(state_rx, node_tx.clone());
         if log.commit_index > applied_index {
@@ -70,6 +71,7 @@ impl Node {
         }
         tokio::spawn(driver.drive(state));
 
+        // Construct the node.
         let (term, voted_for) = log.load_term()?;
         let node = RoleNode {
             id: id.to_owned(),
@@ -91,24 +93,41 @@ impl Node {
         }
     }
 
-    /// Processes a message.
+    /// Processes a message (generic version).
     pub fn step(self, msg: Message) -> Result<Self> {
-        todo!()
+        debug!("Stepping {:?}", msg);
+        match self {
+            Node::Candidate(node) => node.step(msg),
+            Node::Follower(node) => node.step(msg),
+            Node::Leader(node) => node.step(msg),
+        }
+    }
+
+    /// Moves time forward by a tick (generic version).
+    pub fn tick(self) -> Result<Self> {
+        match self {
+            Node::Candidate(node) => node.tick(),
+            Node::Follower(node) => node.tick(),
+            Node::Leader(node) => node.tick(),
+        }
     }
 }
 
+/// Candidate::into() -> Node
 impl From<RoleNode<Candidate>> for Node {
     fn from(rn: RoleNode<Candidate>) -> Self {
         Node::Candidate(rn)
     }
 }
 
+/// Follower::into() -> Node
 impl From<RoleNode<Follower>> for Node {
     fn from(rn: RoleNode<Follower>) -> Self {
         Node::Follower(rn)
     }
 }
 
+/// Leader::into() -> Node
 impl From<RoleNode<Leader>> for Node {
     fn from(rn: RoleNode<Leader>) -> Self {
         Node::Leader(rn)
@@ -149,7 +168,10 @@ impl<R> RoleNode<R> {
 
     /// Aborts any proxied requests.
     fn abort_proxied(&mut self) -> Result<()> {
-        todo!()
+        for (id, address) in std::mem::take(&mut self.proxied_reqs) {
+            self.send(address, Event::ClientResponse { id, response: Err(Error::Abort) })?;
+        }
+        Ok(())
     }
 
     /// Sends any queued requests to the given leader.

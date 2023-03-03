@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use log::{info, debug, warn};
 
 use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL};
-use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message}};
+use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message, Response}};
 
 
 
@@ -144,6 +144,13 @@ impl RoleNode<Leader> {
                         });
                     self.replicate(&src)?;
                 }
+            },
+
+            Event::ClientResponse { id, mut response } => {
+                if let Ok(Response::Status(ref mut status)) = response {
+                    status.server = self.id.clone();
+                }
+                self.send(Address::Client, Event::ClientResponse { id, response })?;
             },
 
             // We ignore these messages, since they are typically additional votes from the previous

@@ -2,7 +2,7 @@ use log::{info, warn, debug};
 use rand::Rng;
 
 use crate::error::Error;
-use crate::raft::{Message, Instruction};
+use crate::raft::{Message, Instruction, Response};
 use crate::{error::Result};
 use super::super::{Address, Event};
 
@@ -148,6 +148,14 @@ impl RoleNode<Follower> {
                         self.send(msg.src_addr, Event::AcceptEntries { match_index })?
                     }
                 }
+            },
+
+            Event::ClientResponse { id, mut response } => {
+                if let Ok(Response::Status(ref mut status)) = response {
+                    status.server = self.id.clone();
+                }
+                self.proxied_reqs.remove(&id);
+                self.send(Address::Client, Event::ClientResponse { id, response })?;
             },
 
             // Ignore votes which are usually strays from the previous election that we lost.

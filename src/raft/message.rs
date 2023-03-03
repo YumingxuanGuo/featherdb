@@ -1,6 +1,8 @@
 use serde_derive::{Serialize, Deserialize};
 
-use super::log::Entry;
+use crate::error::Result;
+
+use super::{log::Entry, Status};
 
 /// A message passed between Raft nodes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -78,6 +80,14 @@ pub enum Event {
 
     /// Followers may also reject a set of log entries from a leader.
     RejectEntries,
+
+    /// A client response.
+    ClientResponse {
+        /// The response ID.
+        id: Vec<u8>,
+        /// The response.
+        response: Result<Response>,
+    },
 }
 
 /// A client request.
@@ -89,5 +99,6 @@ pub enum Request {
 /// A client response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Response {
-    
+    State(Vec<u8>),
+    Status(Status),
 }

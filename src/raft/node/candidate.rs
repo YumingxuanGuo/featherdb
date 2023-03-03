@@ -1,7 +1,7 @@
 use log::{info, warn, debug};
 use rand::Rng;
 
-use crate::{error::Result, raft::{Address, Event, Message}};
+use crate::{error::Result, raft::{Address, Event, Message, Response}};
 
 use super::{ELECTION_TIMEOUT_MIN, ELECTION_TIMEOUT_MAX, RoleNode, Follower, Leader, Node};
 
@@ -91,6 +91,14 @@ impl RoleNode<Candidate> {
                     return Ok(node);
                 }
             },
+
+            Event::ClientResponse { id, mut response } => {
+                if let Ok(Response::Status(ref mut status)) = response {
+                    status.server = self.id.clone();
+                }
+                self.proxied_reqs.remove(&id);
+                self.send(Address::Client, Event::ClientResponse { id, response })?;
+            }
 
             // Ignores other candidates when we are in an election.
             Event::SolicitVote { .. } => {},
