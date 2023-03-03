@@ -4,9 +4,9 @@ use log::{debug, error};
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 
-use crate::error::{Result, Error};
+use crate::{error::{Result, Error}, raft::Response};
 
-use super::{log::{Entry, LogScan}, Address, Message, Status};
+use super::{log::{Entry, LogScan}, Address, Message, Status, Event};
 
 /// A Raft-managed state machine.
 pub trait State: Send {
@@ -101,7 +101,114 @@ impl Driver {
     }
 
     /// Executes a state machine instruction.
-    pub async fn execute(&mut self, i: Instruction, state: &mut dyn State) -> Result<()> {
+    pub async fn execute(&mut self, instruction: Instruction, state: &mut dyn State) -> Result<()> {
+        debug!("Executing {:?}", instruction);
+        match instruction {
+            Instruction::Abort => {
+                self.notify_abort()?;
+                self.query_abort()?;
+            },
+            
+            Instruction::Apply { entry: Entry { index, command, .. } } => {
+                if let Some(command) = command {
+                    debug!("Applying state machine command {}: {:?}", index, command);
+                    match tokio::task::block_in_place(|| state.mutate(index, command)) {
+                        Err(error @ Error::Internal(_)) => return Err(error),
+                        result => self.notify_applied(index, result)?,
+                    };
+                }
+                // We have to track applied_index here, separately from the state machine, because
+                // no-op log entries are significant for whether a query should be executed.
+                self.applied_index = index;
+                // Try to execute any pending queries, since they may have been submitted for a
+                // commit_index which hadn't been applied yet.
+                self.query_execute(state)?;
+            },
+
+            Instruction::Notify { id, address, index } => {
+                todo!()
+            },
+
+            Instruction::Query { id, address, command, index, term, quorum } => {
+                todo!()
+            },
+
+            Instruction::Status { id, address, mut status } => {
+                todo!()
+            },
+
+            Instruction::Vote { term, index, address } => {
+                todo!()
+            },
+        }
+
+        Ok(())
+    }
+
+    /// Aborts all pending notifications.
+    fn notify_abort(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    /// Notifies a client about an applied log entry, if any.
+    fn notify_applied(&mut self, index: u64, result: Result<Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+
+    /// Aborts all pending queries.
+    fn query_abort(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    /// Executes any queries that are ready.
+    fn query_execute(&mut self, state: &mut dyn State) -> Result<()> {
+        for query in self.query_ready(self.applied_index) {
+            debug!("Executing query {:?}", query.command);
+            let result = state.query(query.command);
+            if let Err(error @ Error::Internal(_)) = result {
+                return Err(error);
+            }
+            self.send(
+                query.address,
+                Event::ClientResponse { id: query.id, response: result.map(Response::State) }
+            )?
+        }
+        Ok(())
+    }
+
+    /// Fetches and removes any ready queries, where index <= applied_index.
+    fn query_ready(&mut self, applied_index: u64) -> Vec<Query> {
+        let mut ready = Vec::new();
+        let mut empty = Vec::new();
+        for (index, queires) in self.queries.range_mut(..=applied_index) {
+            let mut ready_ids = Vec::new();
+            for (id, query) in queires.iter_mut() {
+                if query.votes.len() as u64 >= query.quorum {
+                    ready_ids.push(id.clone());
+                }
+            }
+            for id in ready_ids {
+                if let Some(query) = queires.remove(&id) {
+                    ready.push(query);
+                }
+            }
+            if queires.is_empty() {
+                empty.push(*index);
+            }
+        }
+        for index in empty {
+            self.queries.remove(&index);
+        }
+        ready
+    }
+
+    /// Votes for queries up to and including a given commit index for a term by an address.
+    fn query_vote(&mut self, term: u64, commit_index: u64, address: Address) {
+        todo!()
+    }
+
+    /// Sends a message.
+    fn send(&self, to: Address, event: Event) -> Result<()> {
         todo!()
     }
 }
