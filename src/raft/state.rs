@@ -54,7 +54,7 @@ pub struct Driver {
     node_tx: mpsc::UnboundedSender<Message>,
     applied_index: u64,
     /// Notify clients when their mutation is applied. <index, (client, id)>
-    notify: HashMap<u64, (Address, Vec<u8>)>,
+    to_notify: HashMap<u64, (Address, Vec<u8>)>,
     queries: BTreeMap<u64, BTreeMap<Vec<u8>, Query>>,
 }
 
@@ -68,7 +68,7 @@ impl Driver {
             state_rx: UnboundedReceiverStream::new(state_rx),
             node_tx,
             applied_index: 0,
-            notify: HashMap::new(),
+            to_notify: HashMap::new(),
             queries: BTreeMap::new(),
         }
     }
@@ -126,11 +126,18 @@ impl Driver {
             },
 
             Instruction::Notify { id, address, index } => {
-                todo!()
+                if index > state.get_applied_index() {
+                    self.to_notify.insert(index, (address, id));
+                } else {
+                    self.send(address, Event::ClientResponse { id, response: Err(Error::Abort) })?;
+                }
             },
 
             Instruction::Query { id, address, command, index, term, quorum } => {
-                todo!()
+                self.queries.entry(index).or_default().insert(
+                    id.clone(), 
+                    Query { id, term, address, command, quorum, votes: HashSet::new() },
+                );
             },
 
             Instruction::Status { id, address, mut status } => {
@@ -138,7 +145,8 @@ impl Driver {
             },
 
             Instruction::Vote { term, index, address } => {
-                todo!()
+                self.query_vote(term, index, address);
+                self.query_execute(state)?;
             },
         }
 
@@ -204,7 +212,13 @@ impl Driver {
 
     /// Votes for queries up to and including a given commit index for a term by an address.
     fn query_vote(&mut self, term: u64, commit_index: u64, address: Address) {
-        todo!()
+        for (_, queries) in self.queries.range_mut(..=commit_index) {
+            for (_, query) in queries.iter_mut() {
+                if term >= query.term {
+                    query.votes.insert(address.clone());
+                }
+            }
+        }
     }
 
     /// Sends a message.
