@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use log::{info, debug, warn};
 
-use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL};
+use super::{Follower, Node, RoleNode, HEARTBEAT_INTERVAL, Status};
 use crate::{error::{Result, Error}, raft::{Instruction, Address, Event, Message, Response, Request}};
 
 
@@ -146,9 +146,54 @@ impl RoleNode<Leader> {
                 }
             },
             
-            Event::ClientRequest { .. } => {
-                todo!()
-            }
+            Event::ClientRequest { id, request: Request::Query(command) } => {
+                self.state_tx.send(Instruction::Query {
+                    id,
+                    address: msg.src_addr,
+                    command,
+                    term: self.term,
+                    index: self.log.commit_index,
+                    quorum: self.quorum(),
+                })?;
+                // TODO: What is this?
+                self.state_tx.send(Instruction::Vote {
+                    term: self.term,
+                    index: self.log.commit_index,
+                    address: Address::Local,
+                })?;
+                if !self.peers.is_empty() {
+                    self.send(
+                        Address::Peers,
+                        Event::Heartbeat {
+                            commit_index: self.log.commit_index,
+                            commit_term: self.log.commit_term,
+                        },
+                    )?;
+                }
+            },
+
+            Event::ClientRequest { id, request: Request::Mutate(command) } => {
+                let index = self.append(Some(command))?;
+                self.state_tx.send(Instruction::Notify { id, address: msg.src_addr, index })?;
+                if self.peers.is_empty() {
+                    self.commit()?;
+                }
+            },
+
+            Event::ClientRequest { id, request: Request::Status } => {
+                let mut status = Box::new(Status {
+                    server: self.id.clone(),
+                    leader: self.id.clone(),
+                    term: self.term,
+                    node_match_index: self.role.peer_match_index.clone(),
+                    commit_index: self.log.commit_index,
+                    apply_index: 0,  // TODO: why?
+                    storage: self.log.store.to_string(),
+                    storage_size: self.log.store.size(),
+                });
+                status.node_match_index.insert(self.id.clone(), self.log.last_index);
+                self.state_tx.send(Instruction::Status { id, address: msg.src_addr, status })?;
+            },
 
             Event::ClientResponse { id, mut response } => {
                 if let Ok(Response::Status(ref mut status)) = response {

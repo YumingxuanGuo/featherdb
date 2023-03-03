@@ -93,8 +93,8 @@ impl RoleNode<Candidate> {
             },
             
             Event::ClientRequest { .. } => {
-                todo!()
-            }
+                self.queued_reqs.push((msg.src_addr, msg.event));
+            },
 
             Event::ClientResponse { id, mut response } => {
                 if let Ok(Response::Status(ref mut status)) = response {
@@ -102,7 +102,7 @@ impl RoleNode<Candidate> {
                 }
                 self.proxied_reqs.remove(&id);
                 self.send(Address::Client, Event::ClientResponse { id, response })?;
-            }
+            },
 
             // Ignores other candidates when we are in an election.
             Event::SolicitVote { .. } => {},

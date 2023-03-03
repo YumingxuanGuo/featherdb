@@ -150,8 +150,13 @@ impl RoleNode<Follower> {
                 }
             },
             
-            Event::ClientRequest { .. } => {
-                todo!()
+            Event::ClientRequest { ref id, .. } => {
+                if let Some(leader) = self.role.leader.as_deref() {
+                    self.proxied_reqs.insert(id.clone(), msg.src_addr);
+                    self.send(Address::Peer(leader.to_string()), msg.event)?;
+                } else {
+                    self.queued_reqs.push((msg.src_addr, msg.event));
+                }
             }
 
             Event::ClientResponse { id, mut response } => {

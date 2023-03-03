@@ -80,7 +80,7 @@ pub enum Event {
 
     /// Followers may also reject a set of log entries from a leader.
     RejectEntries,
-    
+
     /// A client request.
     ClientRequest {
         /// The request ID.
@@ -101,7 +101,9 @@ pub enum Event {
 /// A client request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Request {
-    
+    Query(Vec<u8>),
+    Mutate(Vec<u8>),
+    Status,
 }
 
 /// A client response.
