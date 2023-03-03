@@ -67,8 +67,7 @@ impl RoleNode<Leader> {
                 if entry.term == self.term {
                     let commit_index = self.log.commit_index;
                     self.log.commit(quorum_index)?;
-                    let mut scan = 
-                        self.log.scan((commit_index + 1)..=self.log.commit_index);
+                    let mut scan = self.log.scan((commit_index + 1)..=self.log.commit_index);
                     while let Some(entry) = scan.next().transpose()? {
                         self.state_tx.send(Instruction::Apply { entry })?;
                     }
@@ -156,6 +155,24 @@ impl RoleNode<Leader> {
             | Event::ReplicateEntries { .. } => warn!("Received unexpected message {:?}", msg),
         }
 
+        Ok(self.into())
+    }
+
+    /// Processes a logical clock tick.
+    pub fn tick(mut self) -> Result<Node> {
+        if !self.peers.is_empty() {
+            self.role.heartbeat_ticks += 1;
+            if self.role.heartbeat_ticks >= HEARTBEAT_INTERVAL {
+                self.role.heartbeat_ticks = 0;
+                self.send(
+                    Address::Peers, 
+                    Event::Heartbeat {
+                        commit_index: self.log.commit_index,
+                        commit_term: self.log.commit_term,
+                    },
+                )?;
+            }
+        }
         Ok(self.into())
     }
 }
