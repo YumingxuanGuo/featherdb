@@ -4,7 +4,7 @@ Version: 0.1.0
 
 ## Introduction
 
-FeatherDB is a in-memory, non-persistent, single-threaded, non-transactional, non-relational, centralized database.
+FeatherDB is an in-memory, non-persistent, single-threaded, non-transactional, non-relational, centralized database.
 
 ## Usage
 
