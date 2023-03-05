@@ -1,4 +1,4 @@
-use crate::storage::{Range, StorageScan, Store};
+use super::{Range, KvScan, Store};
 use crate::error::Result;
 
 use std::collections::BTreeMap;
@@ -23,7 +23,7 @@ impl Display for StdBPlusTree {
 }
 
 impl Store for StdBPlusTree {
-    fn set_or_insert(&mut self, key: &[u8], value: Vec<u8>) -> Result<()> {
+    fn set(&mut self, key: &[u8], value: Vec<u8>) -> Result<()> {
         self.data.insert(key.to_vec(), value);
         Ok(())
     }
@@ -37,7 +37,7 @@ impl Store for StdBPlusTree {
         Ok(())
     }
 
-    fn scan(&self, range: Range) -> StorageScan {
+    fn scan(&self, range: Range) -> KvScan {
         // FIXME Since the range iterator returns borrowed items it would require a read-lock for
         // the duration of the iteration. This is too coarse, so we buffer the entire iteration
         // here. An iterator with an arc-mutex should be used instead, which is able to resume
@@ -50,14 +50,14 @@ impl Store for StdBPlusTree {
                 .into_iter(),
         )
     }
-    
+
     fn flush(&mut self) -> Result<()> {
         Ok(())
     }
 }
 
 #[cfg(test)]
-impl crate::storage::TestSuite<StdBPlusTree> for StdBPlusTree {
+impl super::TestSuite<StdBPlusTree> for StdBPlusTree {
     fn setup() -> Result<Self> {
         Ok(StdBPlusTree::new())
     }
@@ -65,6 +65,6 @@ impl crate::storage::TestSuite<StdBPlusTree> for StdBPlusTree {
 
 #[test]
 fn tests() -> Result<()> {
-    use crate::storage::TestSuite;
+    use super::TestSuite;
     StdBPlusTree::test()
 }
