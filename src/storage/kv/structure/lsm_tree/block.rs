@@ -12,11 +12,27 @@ pub struct Block {
 
 impl Block {
     pub fn encode(&self) -> Bytes {
-        unimplemented!()
+        let mut buffer = self.data.clone();
+        for offset in &self.offsets {
+            buffer.put_u16(*offset);
+        }
+        buffer.put_u16(self.offsets.len() as u16);
+        buffer.into()
     }
 
     pub fn decode(data: &[u8]) -> Self {
-        unimplemented!()
+        let offset_tail = data.len() - SIZEOF_U16;
+        let num_elements = (&data[offset_tail..]).get_u16() as usize;
+        let offset_head = data.len() - SIZEOF_U16 * num_elements - SIZEOF_U16;
+        let offsets_raw = &data[offset_head..offset_tail];
+        let data_raw = &data[..offset_head];
+        Self {
+            data: data_raw.into(),
+            offsets: offsets_raw
+                .chunks(SIZEOF_U16)
+                .map(|mut iter| iter.get_u16())
+                .collect()
+        }
     }
 }
 
@@ -37,15 +53,16 @@ impl BlockBuilder {
     }
 
     fn current_size(&self) -> usize {
-        self.data.len() + self.offsets.len() * SIZEOF_U16
+        self.data.len() + self.offsets.len() * SIZEOF_U16 + SIZEOF_U16
     }
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> bool {
         assert!(!key.is_empty(), "key must not be empty");
-        if self.current_size() + key.len() + value.len() + SIZEOF_U16 * 3 > self.block_size {
-            println!("{}", self.current_size() + key.len() + value.len() + SIZEOF_U16 * 3);
+        if self.current_size() + key.len() + value.len() + SIZEOF_U16 * 3 > self.block_size 
+            && !self.is_empty()
+        {
             return false;
         }
         self.offsets.push(self.data.len() as u16);
