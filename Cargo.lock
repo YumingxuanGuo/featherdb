@@ -252,6 +252,7 @@ name = "featherdb"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bytes",
  "config",
  "futures",
  "futures-util",

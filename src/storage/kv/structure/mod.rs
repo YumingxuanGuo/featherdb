@@ -1,4 +1,5 @@
 pub mod std_b_plus_tree;
+pub mod lsm_tree;
 
 use std::fmt::Display;
 use std::ops::{Bound, RangeBounds};
