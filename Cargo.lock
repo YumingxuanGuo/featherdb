@@ -357,6 +357,7 @@ dependencies = [
  "rustyline-derive",
  "serde",
  "serde_derive",
+ "tempfile",
  "tokio",
  "tokio-serde",
  "tokio-stream",

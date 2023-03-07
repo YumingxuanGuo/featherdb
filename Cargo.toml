@@ -19,6 +19,7 @@ rustyline = "11.0.0"
 rustyline-derive = "0.8.0"
 serde = "~1.0.126"
 serde_derive = "~1.0.126"
+tempfile = "3"
 tokio = { version = "1.26.0", features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync"] }
 tokio-serde = { version = "~0.8", features = ["bincode"] }
 tokio-stream = { version = "~0.1.6", features = ["net"]}
