@@ -8,7 +8,7 @@ use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::Result;
 use super::block::{Block, BlockBuilder, BlockIterator};
-use super::lsm_iterator::StorageIterator;
+use super::iterator::StorageIterator;
 use super::lsm_storage::BlockCache;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
