@@ -101,7 +101,7 @@ impl SsTable {
         let file_len = file.size();
         let meta_offset_raw = file.read(file_len - 4, 4)?;
         let block_meta_offset = (&meta_offset_raw[..]).get_u32() as u64;
-        let meta_raw = file.read(file_len - 4 - block_meta_offset, block_meta_offset)?;
+        let meta_raw = file.read(block_meta_offset, file_len - 4 - block_meta_offset)?;
         let block_metas = BlockMeta::decode_block_meta(&meta_raw[..]);
         Ok(Self {
             id,
@@ -113,22 +113,31 @@ impl SsTable {
 
     /// Read a block from the disk.
     pub fn read_block(&self, block_idx: usize) -> Result<Arc<Block>> {
-        unimplemented!()
+        let block_offset = self.block_metas[block_idx].offset;
+        let block_end = self
+            .block_metas
+            .get(block_idx + 1)
+            .map_or(self.block_meta_offset, |meta| meta.offset);
+        let block_len = block_end - block_offset;
+        let block_raw = self.file.read(block_offset as u64, block_len as u64)?;
+        Ok(Arc::new(Block::decode(&block_raw)))
     }
 
     /// Read a block from disk, with block cache. (Day 4)
     pub fn read_block_cached(&self, block_idx: usize) -> Result<Arc<Block>> {
-        unimplemented!()
+        self.read_block(block_idx)
     }
 
     /// Find the block that may contain `key`.
     pub fn find_block_idx(&self, key: &[u8]) -> usize {
-        unimplemented!()
+        self.block_metas
+            .partition_point(|meta| meta.first_key <= key)
+            .saturating_sub(1)
     }
 
     /// Get number of data blocks.
     pub fn num_of_blocks(&self) -> usize {
-        unimplemented!()
+        self.block_metas.len()
     }
 }
 
