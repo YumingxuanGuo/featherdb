@@ -10,6 +10,11 @@ pub struct Block {
     offsets: Vec<u16>,
 }
 
+/// Data alignment: 
+/// 
+///     |              data             |               offsets             |
+///     | entry | entry | entry | entry | offset | offset | offset | offset | num_of_elements |
+/// 
 impl Block {
     pub fn encode(&self) -> Bytes {
         let mut buffer = self.data.clone();
@@ -57,6 +62,12 @@ impl BlockBuilder {
     }
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
+    /// 
+    /// Data alignment: 
+    ///
+    ///     |                             entry_1                               |
+    ///     | key_len (2B) | key (key_len) | value_len (2B) | value (value_len) | ... |
+    /// 
     #[must_use]
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> bool {
         assert!(!key.is_empty(), "key must not be empty");
