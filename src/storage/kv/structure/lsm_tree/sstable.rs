@@ -4,10 +4,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::Result;
-use super::block::Block;
+use super::block::{Block, BlockBuilder};
 use super::lsm_iterator::StorageIterator;
 use super::lsm_storage::BlockCache;
 
@@ -19,19 +19,40 @@ pub struct BlockMeta {
     pub first_key: Bytes,
 }
 
+/// Data alignment: 
+/// 
+///     |                        meta_entry_1                          |
+///     | offset (4B) | first_key_len (2B) | first_key (first_key_len) | ... |
+/// 
 impl BlockMeta {
     /// Encode block meta to a buffer.
-    pub fn encode_block_meta(
-        block_meta: &[BlockMeta],
-        #[allow(clippy::ptr_arg)] // remove this allow after you finish
-        buf: &mut Vec<u8>,
-    ) {
-        unimplemented!()
+    pub fn encode_block_meta(block_meta: &[BlockMeta], buffer: &mut Vec<u8>) {
+        let mut meta_size = 0;
+        for meta in block_meta {
+            meta_size += std::mem::size_of::<u32>();
+            meta_size += std::mem::size_of::<u16>();
+            meta_size += meta.first_key.len();
+        }
+        buffer.reserve(meta_size);
+        let original_len = buffer.len();
+        for meta in block_meta {
+            buffer.put_u32(meta.offset as u32);
+            buffer.put_u16(meta.first_key.len() as u16);
+            buffer.put_slice(&meta.first_key);
+        }
+        assert_eq!(meta_size + original_len, buffer.len());
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(buf: impl Buf) -> Vec<BlockMeta> {
-        unimplemented!()
+    pub fn decode_block_meta(mut buffer: impl Buf) -> Vec<BlockMeta> {
+        let mut block_meta = Vec::new();
+        while buffer.has_remaining() {
+            let offset = buffer.get_u32() as usize;
+            let first_key_len = buffer.get_u16() as usize;
+            let first_key = buffer.copy_to_bytes(first_key_len);
+            block_meta.push(BlockMeta { offset, first_key });
+        }
+        block_meta
     }
 }
 
@@ -49,7 +70,7 @@ impl FileObject {
 
     /// Create a new file object (day 2) and write the file to the disk (day 4).
     pub fn create(path: &Path, data: Vec<u8>) -> Result<Self> {
-        unimplemented!()
+        Ok(FileObject(data.into()))
     }
 
     pub fn open(path: &Path) -> Result<Self> {
@@ -58,6 +79,7 @@ impl FileObject {
 }
 
 pub struct SsTable {
+    id: usize,
     file: FileObject,
     block_metas: Vec<BlockMeta>,
     block_meta_offset: usize,
@@ -70,6 +92,11 @@ impl SsTable {
     }
 
     /// Open SSTable from a file.
+    /// 
+    /// Data alignment: 
+    /// 
+    ///     | data block | data block | ... | data block | meta block | meta block offset (u32) |
+    /// 
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
         unimplemented!()
     }
@@ -98,34 +125,72 @@ impl SsTable {
 /// Builds an SSTable from key-value pairs.
 pub struct SsTableBuilder {
     pub(super) meta: Vec<BlockMeta>,
-    // Add other fields you need.
+    data: Vec<u8>,
+    cur_block_first_key: Vec<u8>,
+    block_builder: BlockBuilder,
+    block_size: usize,
 }
 
 impl SsTableBuilder {
     /// Create a builder based on target block size.
     pub fn new(block_size: usize) -> Self {
-        unimplemented!()
+        Self {
+            meta: Vec::new(),
+            data: Vec::new(),
+            cur_block_first_key: Vec::new(),
+            block_builder: BlockBuilder::new(block_size),
+            block_size,
+        }
     }
 
     /// Adds a key-value pair to SSTable
     pub fn add(&mut self, key: &[u8], value: &[u8]) {
-        unimplemented!()
+        if self.cur_block_first_key.is_empty() {
+            self.cur_block_first_key = key.into();
+        }
+        if !self.block_builder.add(key, value) {
+            self.finalize_block();
+            assert!(self.block_builder.add(key, value));
+            self.cur_block_first_key = key.into();
+        }
+    }
+
+    fn finalize_block(&mut self) {
+        let old_builder = 
+            std::mem::replace(&mut self.block_builder, BlockBuilder::new(self.block_size));
+        let encoded_block = old_builder.build().encode();
+        self.meta.push(BlockMeta {
+            offset: self.data.len(),
+            first_key: self.cur_block_first_key.clone().into(),
+        });
+        self.data.extend(encoded_block);
     }
 
     /// Get the estimated size of the SSTable.
-    pub fn estimated_size(&self) -> usize {
-        unimplemented!()
+    pub fn meta_size(&self) -> usize {
+        self.data.len()
     }
 
     /// Builds the SSTable and writes it to the given path. No need to actually write to disk until
     /// chapter 4 block cache.
     pub fn build(
-        self,
+        mut self,
         id: usize,
         block_cache: Option<Arc<BlockCache>>,
         path: impl AsRef<Path>,
     ) -> Result<SsTable> {
-        unimplemented!()
+        self.finalize_block();
+        let mut sst_data = self.data;
+        let block_meta_offset = sst_data.len();
+        BlockMeta::encode_block_meta(&self.meta, &mut sst_data);
+        sst_data.put_u32(block_meta_offset as u32);
+        let file = FileObject::create(path.as_ref(), sst_data)?;
+        Ok(SsTable {
+            id,
+            file,
+            block_metas: self.meta,
+            block_meta_offset,
+        })
     }
 
     #[cfg(test)]
@@ -174,5 +239,137 @@ impl StorageIterator for SsTableIterator {
 
     fn next(&mut self) -> Result<()> {
         unimplemented!()
+    }
+}
+
+
+
+#[cfg(test)]
+use tempfile::{tempdir, TempDir};
+
+#[test]
+fn test_sst_build_single_key() {
+    let mut builder = SsTableBuilder::new(16);
+    builder.add(b"233", b"233333");
+    let dir = tempdir().unwrap();
+    builder.build_for_test(dir.path().join("1.sst")).unwrap();
+}
+
+#[test]
+fn test_sst_build_two_blocks() {
+    let mut builder = SsTableBuilder::new(16);
+    builder.add(b"11", b"11");
+    builder.add(b"22", b"22");
+    builder.add(b"33", b"11");
+    builder.add(b"44", b"22");
+    builder.add(b"55", b"11");
+    builder.add(b"66", b"22");
+    assert!(builder.meta.len() >= 2);
+    let dir = tempdir().unwrap();
+    builder.build_for_test(dir.path().join("1.sst")).unwrap();
+}
+
+#[cfg(test)]
+fn key_of(idx: usize) -> Vec<u8> {
+    format!("key_{:03}", idx * 5).into_bytes()
+}
+
+#[cfg(test)]
+fn value_of(idx: usize) -> Vec<u8> {
+    format!("value_{:010}", idx).into_bytes()
+}
+
+#[cfg(test)]
+fn num_of_keys() -> usize {
+    100
+}
+
+#[cfg(test)]
+fn generate_sst() -> (TempDir, SsTable) {
+    let mut builder = SsTableBuilder::new(128);
+    for idx in 0..num_of_keys() {
+        let key = key_of(idx);
+        let value = value_of(idx);
+        builder.add(&key[..], &value[..]);
+    }
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("1.sst");
+    (dir, builder.build_for_test(path).unwrap())
+}
+
+#[test]
+fn test_sst_build_all() {
+    generate_sst();
+}
+
+#[test]
+fn test_sst_decode() {
+    let (_dir, sst) = generate_sst();
+    let meta = sst.block_metas.clone();
+    let new_sst = SsTable::open_for_test(sst.file).unwrap();
+    assert_eq!(new_sst.block_metas, meta);
+}
+
+#[cfg(test)]
+fn as_bytes(x: &[u8]) -> Bytes {
+    Bytes::copy_from_slice(x)
+}
+
+#[test]
+fn test_sst_iterator() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let mut iter = SsTableIterator::create_and_seek_to_first(sst).unwrap();
+    for _ in 0..5 {
+        for i in 0..num_of_keys() {
+            let key = iter.key();
+            let value = iter.value();
+            assert_eq!(
+                key,
+                key_of(i),
+                "expected key: {:?}, actual key: {:?}",
+                as_bytes(&key_of(i)),
+                as_bytes(key)
+            );
+            assert_eq!(
+                value,
+                value_of(i),
+                "expected value: {:?}, actual value: {:?}",
+                as_bytes(&value_of(i)),
+                as_bytes(value)
+            );
+            iter.next().unwrap();
+        }
+        iter.seek_to_first().unwrap();
+    }
+}
+
+#[test]
+fn test_sst_seek_key() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let mut iter = SsTableIterator::create_and_seek_to_key(sst, &key_of(0)).unwrap();
+    for offset in 1..=5 {
+        for i in 0..num_of_keys() {
+            let key = iter.key();
+            let value = iter.value();
+            assert_eq!(
+                key,
+                key_of(i),
+                "expected key: {:?}, actual key: {:?}",
+                as_bytes(&key_of(i)),
+                as_bytes(key)
+            );
+            assert_eq!(
+                value,
+                value_of(i),
+                "expected value: {:?}, actual value: {:?}",
+                as_bytes(&value_of(i)),
+                as_bytes(value)
+            );
+            iter.seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes())
+                .unwrap();
+        }
+        iter.seek_to_key(b"k").unwrap();
     }
 }
