@@ -1,11 +1,24 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
+use std::ops::Bound;
+
+use bytes::Bytes;
+
 use crate::error::Result;
 
-use super::iterators::StorageIterator;
+use super::{iterators::{StorageIterator, TwoMergeIterator, MergeIterator}, memtable::MemTableIterator, sstable::SsTableIterator};
+
+type LsmIteratorInner =
+    TwoMergeIterator<MergeIterator<MemTableIterator>, MergeIterator<SsTableIterator>>;
 
 pub struct LsmIterator {}
+
+impl LsmIterator {
+    pub(crate) fn new(iter: LsmIteratorInner, end_bound: Bound<Bytes>) -> Result<Self> {
+        unimplemented!()
+    }
+}
 
 impl StorageIterator for LsmIterator {
     fn is_valid(&self) -> bool {
