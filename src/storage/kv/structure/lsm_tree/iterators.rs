@@ -1,6 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 use std::cmp::{self};
 use std::collections::binary_heap::PeekMut;
 use std::collections::BinaryHeap;
@@ -251,10 +248,12 @@ impl StorageIterator for MockIterator {
     }
 }
 
+#[cfg(test)]
 fn as_bytes(x: &[u8]) -> Bytes {
     Bytes::copy_from_slice(x)
 }
 
+#[cfg(test)]
 fn check_iter_result(iter: impl StorageIterator, expected: Vec<(Bytes, Bytes)>) {
     let mut iter = iter;
     for (k, v) in expected {
@@ -386,6 +385,7 @@ fn test_merge_empty() {
     check_iter_result(iter, vec![]);
 }
 
+#[cfg(test)]
 fn check_iter_result_two(iter: impl StorageIterator, expected: Vec<(Bytes, Bytes)>) {
     let mut iter = iter;
     for (k, v) in expected {
