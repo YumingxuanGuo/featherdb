@@ -1,13 +1,10 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
 use bytes::{Buf, Bytes, BufMut};
 
-use crate::error::Result;
+use crate::error::{Result, Error};
 use super::block::{Block, BlockBuilder, BlockIterator};
 use super::iterators::StorageIterator;
 use super::lsm_storage::BlockCache;
@@ -91,6 +88,7 @@ pub struct SsTable {
     file: FileObject,
     block_metas: Vec<BlockMeta>,
     block_meta_offset: usize,
+    block_cache: Option<Arc<BlockCache>>,
 }
 
 impl SsTable {
@@ -116,6 +114,7 @@ impl SsTable {
             file,
             block_metas,
             block_meta_offset: block_meta_offset as usize,
+            block_cache,
         })
     }
 
@@ -133,7 +132,14 @@ impl SsTable {
 
     /// Read a block from disk, with block cache. (Day 4)
     pub fn read_block_cached(&self, block_idx: usize) -> Result<Arc<Block>> {
-        self.read_block(block_idx)
+        if let Some(ref block_cache) = self.block_cache {
+            let blk = block_cache
+                .try_get_with((self.id, block_idx), || self.read_block(block_idx))
+                .map_err(|e| Error::Internal(e.to_string()))?;
+            Ok(blk)
+        } else {
+            self.read_block(block_idx)
+        }
     }
 
     /// Find the block that may contain `key`.
@@ -217,6 +223,7 @@ impl SsTableBuilder {
             file,
             block_metas: self.meta,
             block_meta_offset,
+            block_cache,
         })
     }
 
