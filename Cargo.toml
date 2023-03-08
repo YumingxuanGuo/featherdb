@@ -15,6 +15,7 @@ futures = "~0.3.15"
 futures-util = "~0.3.15"
 log = "~0.4.14"
 moka = "0.10.0"
+parking_lot = "0.12"
 ouroboros = "0.15"
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = "1.5.4"

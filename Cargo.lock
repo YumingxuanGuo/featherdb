@@ -378,6 +378,7 @@ dependencies = [
  "log",
  "moka",
  "ouroboros",
+ "parking_lot",
  "rand",
  "regex",
  "rustyline",
