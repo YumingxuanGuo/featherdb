@@ -148,30 +148,71 @@ impl<I: StorageIterator> StorageIterator for MergeIterator<I> {
 pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
     a: A,
     b: B,
-    // Add fields as need
+    a_is_next: bool,
 }
 
 impl<A: StorageIterator, B: StorageIterator> TwoMergeIterator<A, B> {
+    fn a_is_next(a: &A, b: &B) -> bool {
+        if !a.is_valid() {
+            return false;
+        }
+        if !b.is_valid() {
+            return true;
+        }
+        a.key() < b.key()
+    }
+
+    fn skip_b(&mut self) -> Result<()> {
+        if self.a.is_valid() {
+            while self.b.is_valid() && self.a.key() == self.b.key() {
+                self.b.next()?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn create(a: A, b: B) -> Result<Self> {
-        unimplemented!()
+        let mut this = Self {
+            a,
+            b,
+            a_is_next: false,
+        };
+        this.skip_b()?;
+        this.a_is_next = Self::a_is_next(&this.a, &this.b);
+        Ok(this)
     }
 }
 
 impl<A: StorageIterator, B: StorageIterator> StorageIterator for TwoMergeIterator<A, B> {
     fn key(&self) -> &[u8] {
-        unimplemented!()
+        match self.a_is_next {
+            true => self.a.key(),
+            false => self.b.key()
+        }
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        match self.a_is_next {
+            true => self.a.value(),
+            false => self.b.value(),
+        }
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        match self.a_is_next {
+            true => self.a.is_valid(),
+            false => self.b.is_valid(),
+        }
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        match self.a_is_next {
+            true => self.a.next()?,
+            false => self.b.next()?,
+        }
+        self.skip_b()?;
+        self.a_is_next = Self::a_is_next(&self.a, &self.b);
+        Ok(())
     }
 }
 
