@@ -204,20 +204,20 @@ pub struct BlockIter {
     /// The block we're iterating across.
     block: Arc<Block>,
     /// The front cursor keeps track of the last returned value from the front.
-    front_index: Option<i64>,
+    front_index: Option<i32>,
     /// The back cursor keeps track of the last returned value from the back.
-    back_index: Option<i64>,
+    back_index: Option<i32>,
 }
 
 impl BlockIter {
     /// Creates a new iterator.
-    fn new(block: Arc<Block>) -> Self {
+    pub fn new(block: Arc<Block>) -> Self {
         Self { block, front_index: None, back_index: None }
     }
 
     // Returns the entry at index, or None if index out of bound.
-    fn peek_index(&self, index: i64) -> Option<(Vec<u8>, Vec<u8>)>{
-        if index >= self.block.offsets.len() as i64 || index < 0 {
+    fn peek_index(&self, index: i32) -> Option<(Vec<u8>, Vec<u8>)>{
+        if index >= self.block.offsets.len() as i32 || index < 0 {
             return None
         }
         let offset = self.block.offsets[index as usize] as usize;
@@ -235,7 +235,7 @@ impl BlockIter {
         let next_index = self.front_index.map_or(0, |i| i + 1);
         let next_entry = self.peek_index(next_index);
         self.front_index = Some(next_index);
-        // If the front and back index intersacts, stops iteration.
+        // If the front and back index intersects, stops iteration.
         if let Some(_) = next_entry {
             if let Some(back_index) = self.back_index {
                 if next_index >= back_index {
@@ -248,10 +248,10 @@ impl BlockIter {
 
     /// Moves to the next key in the block in reverse order, updating `self.back_index`.
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i64, |i| i - 1);
+        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i32, |i| i - 1);
         let next_entry = self.peek_index(next_index);
         self.back_index = Some(next_index);
-        // If the front and back index intersacts, stops iteration.
+        // If the front and back index intersects, stops iteration.
         if let Some(_) = next_entry {
             if let Some(front_index) = self.front_index {
                 if next_index <= front_index {
@@ -452,7 +452,7 @@ fn test_block_iter_rev() {
 }
 
 #[test]
-fn test_block_iter_intersact() {
+fn test_block_iter_intersection() {
     let block = Arc::new(generate_block());
     let mut iter = BlockIter::new(block);
     for i in 0..(num_of_keys() / 2) {

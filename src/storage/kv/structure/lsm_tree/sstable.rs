@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::{Result, Error};
-use super::block::{Block, BlockBuilder, BlockIterator};
+use super::block::{Block, BlockBuilder, BlockIterator, BlockIter};
 use super::iterators::StorageIterator;
 use super::lsm_storage::BlockCache;
 
@@ -308,6 +308,79 @@ impl StorageIterator for SsTableIterator {
             }
         }
         Ok(())
+    }
+}
+
+/// Rust-compatible iterator on a SsTable.
+pub struct SsTableIter {
+    /// The block we're iterating across.
+    table: Arc<SsTable>,
+    /// The front cursor keeps track of the last returned value from the front.
+    front_block_iter: Option<(i32, BlockIter)>,
+    /// The back cursor keeps track of the last returned value from the back.
+    back_block_iter: Option<(i32, BlockIter)>,
+}
+
+impl SsTableIter {
+    pub fn new(table: Arc<SsTable>) -> Result<Self> {
+        let block = table.read_block_cached(0)?;
+        Ok(Self {
+            table,
+            front_block_iter: None,
+            back_block_iter: None,
+        })
+    }
+
+    fn is_valid(&self) -> bool {
+        false
+    }
+
+    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        if self.front_block_iter.is_none() {
+            let block = self.table.read_block_cached(0)?;
+            self.front_block_iter = Some((0, BlockIter::new(block)));
+        }
+        if let Some((ref mut idx, ref mut iter)) = self.front_block_iter {
+            let next_entry = match iter.next().transpose()? {
+                Some(entry) => Some(entry),
+                None => {
+                    *idx += 1;
+                    if *idx < self.table.num_of_blocks() as i32 {
+                        let block = self.table.read_block_cached(*idx as usize)?;
+                        *iter = BlockIter::new(block);
+                        iter.next().transpose()?
+                    } else {
+                        None
+                    }
+                },
+            };
+            if let Some(_) = next_entry {
+                if !self.is_valid() {
+                    return Ok(None);
+                }
+            }
+            return Ok(next_entry);
+        }
+        // Shouldn't reach here.
+        Ok(None)
+    }
+
+    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        todo!()
+    }
+}
+
+impl Iterator for SsTableIter {
+    type Item = Result<(Vec<u8>, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.try_next().transpose()
+    }
+}
+
+impl DoubleEndedIterator for SsTableIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.try_next_back().transpose()
     }
 }
 
