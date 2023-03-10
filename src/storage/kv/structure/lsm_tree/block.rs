@@ -1,6 +1,8 @@
 use std::{sync::Arc, usize};
 use bytes::{Bytes, BufMut, Buf};
 
+use crate::error::Result;
+
 pub const SIZEOF_U16: usize = std::mem::size_of::<u16>();
 
 /// A block is the smallest unit of read and caching in LSM tree. It is a collection of sorted
@@ -99,7 +101,6 @@ impl BlockBuilder {
     }
 }
 
-
 /// Iterates on a block.
 pub struct BlockIterator {
     block: Arc<Block>,
@@ -195,6 +196,84 @@ impl BlockIterator {
         }
         self.seek_to_idx(low);
         self.idx = low;
+    }
+}
+
+/// Rust-compatible iterator on a block.
+pub struct BlockIter {
+    /// The block we're iterating across.
+    block: Arc<Block>,
+    /// The front cursor keeps track of the last returned value from the front.
+    front_index: Option<i64>,
+    /// The back cursor keeps track of the last returned value from the back.
+    back_index: Option<i64>,
+}
+
+impl BlockIter {
+    /// Creates a new iterator.
+    fn new(block: Arc<Block>) -> Self {
+        Self { block, front_index: None, back_index: None }
+    }
+
+    // Returns the entry at index, or None if index out of bound.
+    fn peek_index(&self, index: i64) -> Option<(Vec<u8>, Vec<u8>)>{
+        if index >= self.block.offsets.len() as i64 || index < 0 {
+            return None
+        }
+        let offset = self.block.offsets[index as usize] as usize;
+        let mut entry_raw = &self.block.data[offset..];
+        let key_len = entry_raw.get_u16() as usize;
+        let key = entry_raw[..key_len].to_vec();
+        entry_raw.advance(key_len);
+        let value_len = entry_raw.get_u16() as usize;
+        let value = entry_raw[..value_len].to_vec();
+        Some((key, value))
+    }
+
+    /// Moves to the next key in the block, updating `self.front_index`.
+    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        let next_index = self.front_index.map_or(0, |i| i + 1);
+        let next_entry = self.peek_index(next_index);
+        self.front_index = Some(next_index);
+        // If the front and back index intersacts, stops iteration.
+        if let Some(_) = next_entry {
+            if let Some(back_index) = self.back_index {
+                if next_index >= back_index {
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(next_entry)
+    }
+
+    /// Moves to the next key in the block in reverse order, updating `self.back_index`.
+    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i64, |i| i - 1);
+        let next_entry = self.peek_index(next_index);
+        self.back_index = Some(next_index);
+        // If the front and back index intersacts, stops iteration.
+        if let Some(_) = next_entry {
+            if let Some(front_index) = self.front_index {
+                if next_index <= front_index {
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(next_entry)
+    }
+}
+
+impl Iterator for BlockIter {
+    type Item = Result<(Vec<u8>, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.try_next().transpose()
+    }
+}
+
+impl DoubleEndedIterator for BlockIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.try_next_back().transpose()
     }
 }
 
@@ -319,5 +398,94 @@ fn test_block_seek_key() {
             iter.seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes());
         }
         iter.seek_to_key(b"k");
+    }
+}
+
+#[test]
+fn test_block_iter() {
+    let block = Arc::new(generate_block());
+    let iter = BlockIter::new(block);
+    let mut i = 0;
+    for entry in iter {
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+        i += 1;
+    }
+}
+
+#[test]
+fn test_block_iter_rev() {
+    let block = Arc::new(generate_block());
+    let iter = BlockIter::new(block);
+    let mut i = num_of_keys();
+    for entry in iter.rev() {
+        i -= 1;
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+    }
+}
+
+#[test]
+fn test_block_iter_intersact() {
+    let block = Arc::new(generate_block());
+    let mut iter = BlockIter::new(block);
+    for i in 0..(num_of_keys() / 2) {
+        let (key, value) = iter.next().unwrap().unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+
+        let (back_key, back_value) = iter.next_back().unwrap().unwrap();
+        assert_eq!(
+            &back_key[..],
+            key_of(num_of_keys() - i - 1),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(num_of_keys() - i - 1)),
+            as_bytes(&back_key[..])
+        );
+        assert_eq!(
+            &back_value[..],
+            value_of(num_of_keys() - i - 1),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(num_of_keys() - i - 1)),
+            as_bytes(&back_value[..])
+        );
     }
 }
