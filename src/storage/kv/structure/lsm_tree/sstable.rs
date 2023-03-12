@@ -323,7 +323,6 @@ pub struct SsTableIter {
 
 impl SsTableIter {
     pub fn new(table: Arc<SsTable>) -> Result<Self> {
-        let block = table.read_block_cached(0)?;
         Ok(Self {
             table,
             front_block_iter: None,
@@ -332,7 +331,22 @@ impl SsTableIter {
     }
 
     fn is_valid(&self) -> bool {
-        false
+        match (&self.front_block_iter, &self.back_block_iter) {
+            (Some((front_idx, front_iter)), Some((back_idx, back_iter))) => {
+                match front_idx.cmp(back_idx) {
+                    std::cmp::Ordering::Less => true,
+                    std::cmp::Ordering::Greater => false,
+                    std::cmp::Ordering::Equal => {
+                        if let (Some(f_idx), Some(b_idx)) = (front_iter.front_index, back_iter.back_index) {
+                            f_idx < b_idx
+                        } else {
+                            true
+                        }
+                    }
+                }
+            },
+            _ => true,
+        }
     }
 
     fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
@@ -366,7 +380,34 @@ impl SsTableIter {
     }
 
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        todo!()
+        if self.back_block_iter.is_none() {
+            let block_idx = self.table.num_of_blocks() - 1;
+            let block = self.table.read_block_cached(block_idx)?;
+            self.back_block_iter = Some((block_idx as i32, BlockIter::new(block)));
+        }
+        if let Some((ref mut idx, ref mut iter)) = self.back_block_iter {
+            let next_entry = match iter.next_back().transpose()? {
+                Some(entry) => Some(entry),
+                None => {
+                    *idx -= 1;
+                    if *idx >= 0 {
+                        let block = self.table.read_block_cached(*idx as usize)?;
+                        *iter = BlockIter::new(block);
+                        iter.next_back().transpose()?
+                    } else {
+                        None
+                    }
+                },
+            };
+            if let Some(_) = next_entry {
+                if !self.is_valid() {
+                    return Ok(None);
+                }
+            }
+            return Ok(next_entry);
+        }
+        // Shouldn't reach here.
+        Ok(None)
     }
 }
 
@@ -483,6 +524,99 @@ fn test_sst_iterator() {
             iter.next().unwrap();
         }
         iter.seek_to_first().unwrap();
+    }
+}
+
+#[test]
+fn test_sst_iter() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let iter = SsTableIter::new(sst).unwrap();
+    let mut i = 0;
+    for entry in iter {
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+        i += 1;
+    }
+}
+
+#[test]
+fn test_sst_iter_rev() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let iter = SsTableIter::new(sst).unwrap();
+    let mut i = num_of_keys();
+    for entry in iter.rev() {
+        i -= 1;
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+    }
+    println!("i = {i}");
+}
+
+#[test]
+fn test_sst_iter_intersection() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let mut iter = SsTableIter::new(sst).unwrap();
+    for i in 0..(num_of_keys() / 2) {
+        let (key, value) = iter.next().unwrap().unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+
+        let (back_key, back_value) = iter.next_back().unwrap().unwrap();
+        assert_eq!(
+            &back_key[..],
+            key_of(num_of_keys() - i - 1),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(num_of_keys() - i - 1)),
+            as_bytes(&back_key[..])
+        );
+        assert_eq!(
+            &back_value[..],
+            value_of(num_of_keys() - i - 1),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(num_of_keys() - i - 1)),
+            as_bytes(&back_value[..])
+        );
     }
 }
 

@@ -204,9 +204,9 @@ pub struct BlockIter {
     /// The block we're iterating across.
     block: Arc<Block>,
     /// The front cursor keeps track of the last returned value from the front.
-    front_index: Option<i32>,
+    pub(super) front_index: Option<i32>,
     /// The back cursor keeps track of the last returned value from the back.
-    back_index: Option<i32>,
+    pub(super) back_index: Option<i32>,
 }
 
 impl BlockIter {
