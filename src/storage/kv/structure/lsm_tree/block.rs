@@ -355,7 +355,7 @@ fn test_block_iter_intersection() {
 }
 
 #[test]
-fn test_block_iter_intersection_2() {
+fn test_block_iter_intersection_random() {
     use rand::Rng;
     let block = Arc::new(generate_block());
     let mut iter = BlockIter::new(block);
