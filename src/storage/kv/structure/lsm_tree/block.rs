@@ -3,6 +3,8 @@ use bytes::{Bytes, BufMut, Buf};
 
 use crate::error::Result;
 
+use super::iterators::StorageIter;
+
 pub const SIZEOF_U16: usize = std::mem::size_of::<u16>();
 
 /// A block is the smallest unit of read and caching in LSM tree. It is a collection of sorted
@@ -199,6 +201,9 @@ impl BlockIterator {
     }
 }
 
+// ============================================================================================= //
+
+#[derive(Clone)]
 /// Rust-compatible iterator on a block.
 pub struct BlockIter {
     /// The block we're iterating across.
@@ -229,6 +234,29 @@ impl BlockIter {
         let value = entry_raw[..value_len].to_vec();
         Some((key, value))
     }
+}
+
+impl StorageIter for BlockIter {
+    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.front_index.map_or(None, |idx| self.peek_index(idx))
+    }
+
+    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.back_index.map_or(None, |idx| self.peek_index(idx))
+    }
+    
+    fn is_valid(&self) -> bool {
+        match (self.front_index, self.back_index) {
+            (Some(f_idx), Some(b_idx)) => {
+                f_idx < b_idx &&
+                0 <= f_idx && f_idx < self.block.offsets.len() as i32 &&
+                0 <= b_idx && b_idx < self.block.offsets.len() as i32
+            },
+            (Some(f_idx), None) => { 0 <= f_idx && f_idx < self.block.offsets.len() as i32 },
+            (None, Some(b_idx)) => { 0 <= b_idx && b_idx < self.block.offsets.len() as i32 },
+            (None, None) => { true },
+        }
+    }
 
     /// Moves to the next key in the block, updating `self.front_index`.
     fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
@@ -236,14 +264,10 @@ impl BlockIter {
         let next_entry = self.peek_index(next_index);
         self.front_index = Some(next_index);
         // If the front and back index intersects, stops iteration.
-        if let Some(_) = next_entry {
-            if let Some(back_index) = self.back_index {
-                if next_index >= back_index {
-                    return Ok(None);
-                }
-            }
+        match self.is_valid() {
+            false => Ok(None),
+            true => Ok(next_entry),
         }
-        Ok(next_entry)
     }
 
     /// Moves to the next key in the block in reverse order, updating `self.back_index`.
@@ -252,14 +276,10 @@ impl BlockIter {
         let next_entry = self.peek_index(next_index);
         self.back_index = Some(next_index);
         // If the front and back index intersects, stops iteration.
-        if let Some(_) = next_entry {
-            if let Some(front_index) = self.front_index {
-                if next_index <= front_index {
-                    return Ok(None);
-                }
-            }
+        match self.is_valid() {
+            false => Ok(None),
+            true => Ok(next_entry),
         }
-        Ok(next_entry)
     }
 }
 
@@ -277,7 +297,7 @@ impl DoubleEndedIterator for BlockIter {
     }
 }
 
-
+// ============================================================================================= //
 
 #[test]
 fn test_block_build_single_key() {
