@@ -148,7 +148,7 @@ impl StorageIter for BlockIter {
     fn is_valid(&self) -> bool {
         match (self.front_index, self.back_index) {
             (Some(f_idx), Some(b_idx)) => {
-                f_idx < b_idx &&
+                f_idx < b_idx - 1 &&
                 0 <= f_idx && f_idx < self.block.offsets.len() as i32 &&
                 0 <= b_idx && b_idx < self.block.offsets.len() as i32
             },
@@ -160,25 +160,29 @@ impl StorageIter for BlockIter {
 
     /// Moves to the next key in the block, updating `self.front_index`.
     fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        let next_index = self.front_index.map_or(0, |i| i + 1);
-        let next_entry = self.peek_index(next_index);
-        self.front_index = Some(next_index);
         // If the front and back index intersects, stops iteration.
         match self.is_valid() {
             false => Ok(None),
-            true => Ok(next_entry),
+            true => {
+                let next_index = self.front_index.map_or(0, |i| i + 1);
+                let next_entry = self.peek_index(next_index);
+                self.front_index = Some(next_index);
+                Ok(next_entry)
+            }
         }
     }
 
     /// Moves to the next key in the block in reverse order, updating `self.back_index`.
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i32, |i| i - 1);
-        let next_entry = self.peek_index(next_index);
-        self.back_index = Some(next_index);
         // If the front and back index intersects, stops iteration.
         match self.is_valid() {
             false => Ok(None),
-            true => Ok(next_entry),
+            true => {
+                let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i32, |i| i - 1);
+                let next_entry = self.peek_index(next_index);
+                self.back_index = Some(next_index);
+                Ok(next_entry)
+            }
         }
     }
 }
@@ -352,6 +356,7 @@ fn test_block_iter_intersection() {
             as_bytes(&back_value[..])
         );
     }
+    assert!(!iter.is_valid());
 }
 
 #[test]
@@ -364,7 +369,6 @@ fn test_block_iter_intersection_random() {
     for _ in 0..num_of_keys() {
         match rand::thread_rng().gen_range(0..=1) {
             1 => {
-                println!("forward");
                 let (key, value) = iter.next().unwrap().unwrap();
                 assert_eq!(
                     &key[..],
@@ -384,7 +388,6 @@ fn test_block_iter_intersection_random() {
             },
 
             0 => {
-                println!("backward");
                 let (back_key, back_value) = iter.next_back().unwrap().unwrap();
                 assert_eq!(
                     &back_key[..],
@@ -406,6 +409,7 @@ fn test_block_iter_intersection_random() {
             _ => { assert!(false) },
         };
     }
+    assert!(!iter.is_valid());
 }
 
 

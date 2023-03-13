@@ -162,16 +162,20 @@ impl<I: StorageIter> StorageIter for MergeIter<I> {
 
     fn is_valid(&self) -> bool {
         match (&self.front_entry, &self.back_entry) {
-            (Some((front_key, _)), Some((back_key, _))) => { front_key < back_key },
+            (Some(_), Some((back_key, _))) => {
+                let top = self.front_iters.peek().expect("should have top iter");
+                let (next_front_key, _) = &top.iter.front_entry().expect("should have front entry");
+                next_front_key < back_key
+            },
             (Some(_), None) => { !self.front_iters.is_empty() },
             (None, Some(_)) => { !self.back_iters.is_empty() },
-            (None, None) => { true },
+            (None, None) => { !self.front_iters.is_empty() || !self.back_iters.is_empty() },
         }
     }
 
     fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
         match self.is_valid() {
-            false => { Ok(None) },
+            false => Ok(None),
             true => {
                 if let Some(top) = self.front_iters.peek() {
                     self.front_entry = top.iter.front_entry();
@@ -196,7 +200,7 @@ impl<I: StorageIter> StorageIter for MergeIter<I> {
     
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
         match self.is_valid() {
-            false => { Ok(None) },
+            false => Ok(None),
             true => {
                 if let Some(top) = self.back_iters.peek() {
                     self.back_entry = top.iter.back_entry();
@@ -229,6 +233,206 @@ impl<I: StorageIter> Iterator for MergeIter<I> {
 }
 
 impl<I: StorageIter> DoubleEndedIterator for MergeIter<I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.try_next_back().transpose()
+    }
+}
+
+#[derive(Clone)]
+/// Merges two iterators of different types into one. If the two iterators have the same key, only
+/// produce the key once and prefer the entry from A.
+pub struct TwoMergeIter<A: StorageIter, B: StorageIter> {
+    front_a: A,
+    front_b: B,
+    front_a_is_next: bool,
+    front_entry: Option<(Vec<u8>, Vec<u8>)>,
+    back_a: A,
+    back_b: B,
+    back_a_is_next: bool,
+    back_entry: Option<(Vec<u8>, Vec<u8>)>,
+}
+
+impl<A: StorageIter, B: StorageIter> TwoMergeIter<A, B> {
+    fn front_a_is_next(a: &A, b: &B) -> bool {
+        match (a.is_valid(), b.is_valid()) {
+            (true, true) => {
+                let (a_key, _) = a.front_entry().expect("should have front entry");
+                let (b_key, _) = b.front_entry().expect("should have front entry");
+                a_key < b_key
+            },
+            (false, _) => { false },
+            (true, false) => { true },
+        }
+    }
+
+    fn front_skip_b(&mut self) -> Result<()> {
+        if self.front_a.is_valid() {
+            let (a_key, _) = self.front_a.front_entry().expect("should have front entry");
+            while self.front_b.is_valid() {
+                let (b_key, _) = self.front_b.front_entry().expect("should have front entry");
+                if a_key == b_key {
+                    self.front_b.try_next()?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn back_a_is_next(a: &A, b: &B) -> bool {
+        match (a.is_valid(), b.is_valid()) {
+            (true, true) => {
+                let (a_key, _) = a.back_entry().expect("should have front entry");
+                let (b_key, _) = b.back_entry().expect("should have front entry");
+                a_key > b_key
+            },
+            (false, _) => { false },
+            (true, false) => { true },
+        }
+    }
+
+    fn back_skip_b(&mut self) -> Result<()> {
+        if self.back_a.is_valid() {
+            let (a_key, _) = self.back_a.back_entry().expect("should have front entry");
+            while self.back_b.is_valid() {
+                let (b_key, _) = self.back_b.back_entry().expect("should have front entry");
+                if a_key == b_key {
+                    self.back_b.try_next_back()?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn create(a: A, b: B) -> Result<Self> {
+        let mut front_a = a.clone();
+        let mut front_b = b.clone();
+        front_a.try_next()?;
+        front_b.try_next()?;
+        let mut back_a = a.clone();
+        let mut back_b = b.clone();
+        back_a.try_next_back()?;
+        back_b.try_next_back()?;
+        let mut this = Self {
+            front_a,
+            front_b,
+            front_a_is_next: false,
+            front_entry: None,
+            back_a,
+            back_b,
+            back_a_is_next: false,
+            back_entry: None,
+        };
+        this.front_skip_b()?;
+        this.back_skip_b()?;
+        this.front_a_is_next = Self::front_a_is_next(&this.front_a, &this.front_b);
+        this.back_a_is_next = Self::back_a_is_next(&this.back_a, &this.back_b);
+        Ok(this)
+    }
+}
+
+impl<A: StorageIter, B: StorageIter> StorageIter for TwoMergeIter<A, B> {
+    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.front_entry.clone()
+    }
+
+    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.back_entry.clone()
+    }
+
+    fn is_valid(&self) -> bool {
+        match (&self.front_entry, &self.back_entry) {
+            (Some(_), Some((back_key, _))) => {
+                match self.front_a_is_next {
+                    true => {
+                        let (next_front_key, _) = &self.front_a.front_entry()
+                            .expect("should have front entry");
+                        next_front_key < back_key
+                    },
+        
+                    false => {
+                        let (next_front_key, _) = &self.front_b.front_entry()
+                            .expect("should have front entry");
+                        next_front_key < back_key
+                    }
+                }
+            },
+
+            (Some(_), None) => {
+                match self.front_a_is_next {
+                    true => self.front_a.is_valid(),
+                    false => self.front_b.is_valid(),
+                }
+            },
+
+            (None, Some(_)) => {
+                match self.back_a_is_next {
+                    true => self.back_a.is_valid(),
+                    false => self.back_b.is_valid(),
+                }
+            },
+
+            (None, None) => { self.back_a.is_valid() || self.back_b.is_valid() },
+        }
+    }
+
+    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        match self.is_valid() {
+            false => Ok(None),
+            true => {
+                match self.front_a_is_next {
+                    true => {
+                        self.front_entry = self.front_a.front_entry();
+                        self.front_a.try_next()?;
+                    },
+        
+                    false => {
+                        self.front_entry = self.front_b.front_entry();
+                        self.front_b.try_next()?;
+                    }
+                };
+                self.front_skip_b()?;
+                self.front_a_is_next = Self::front_a_is_next(&self.front_a, &self.front_b);
+                Ok(self.front_entry.clone())
+            }
+        }
+    }
+
+    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        match self.is_valid() {
+            false => Ok(None),
+            true => {
+                match self.back_a_is_next {
+                    true => {
+                        self.back_entry = self.back_a.back_entry();
+                        self.back_a.try_next_back()?;
+                    },
+        
+                    false => {
+                        self.back_entry = self.back_b.back_entry();
+                        self.back_b.try_next_back()?;
+                    }
+                };
+                self.back_skip_b()?;
+                self.back_a_is_next = Self::back_a_is_next(&self.back_a, &self.back_b);
+                Ok(self.back_entry.clone())
+            }
+        }
+    }
+}
+
+impl<A: StorageIter, B: StorageIter> Iterator for TwoMergeIter<A, B> {
+    type Item = Result<(Vec<u8>, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.try_next().transpose()
+    }
+}
+
+impl<A: StorageIter, B: StorageIter> DoubleEndedIterator for TwoMergeIter<A, B> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.try_next_back().transpose()
     }
@@ -313,403 +517,7 @@ impl DoubleEndedIterator for MockIter {
     }
 }
 
-#[derive(Clone)]
-/// Merges two iterators of different types into one. If the two iterators have the same key, only
-/// produce the key once and prefer the entry from A.
-pub struct TwoMergeIter<A: StorageIter, B: StorageIter> {
-    front_a: A,
-    front_b: B,
-    front_a_is_next: bool,
-    front_entry: Option<(Vec<u8>, Vec<u8>)>,
-    back_a: A,
-    back_b: B,
-    back_a_is_next: bool,
-    back_entry: Option<(Vec<u8>, Vec<u8>)>,
-}
 
-impl<A: StorageIter, B: StorageIter> TwoMergeIter<A, B> {
-    fn front_a_is_next(a: &A, b: &B) -> bool {
-        match (a.is_valid(), b.is_valid()) {
-            (true, true) => {
-                let (a_key, _) = a.front_entry().expect("should have front entry");
-                let (b_key, _) = b.front_entry().expect("should have front entry");
-                a_key < b_key
-            },
-            (false, _) => { false },
-            (true, false) => { true },
-        }
-    }
-
-    fn front_skip_b(&mut self) -> Result<()> {
-        if self.front_a.is_valid() {
-            let (a_key, _) = self.front_a.front_entry().expect("should have front entry");
-            let (mut b_key, _) = self.front_b.front_entry().expect("should have front entry");
-            while self.front_b.is_valid() && a_key == b_key {
-                self.front_b.try_next()?;
-                (b_key, _) = self.front_b.front_entry().expect("should have front entry");
-            }
-        }
-        Ok(())
-    }
-
-    fn back_a_is_next(a: &A, b: &B) -> bool {
-        match (a.is_valid(), b.is_valid()) {
-            (true, true) => {
-                let (a_key, _) = a.back_entry().expect("should have front entry");
-                let (b_key, _) = b.back_entry().expect("should have front entry");
-                a_key > b_key
-            },
-            (false, _) => { false },
-            (true, false) => { true },
-        }
-    }
-
-    fn back_skip_b(&mut self) -> Result<()> {
-        if self.back_a.is_valid() {
-            let (a_key, _) = self.back_a.back_entry().expect("should have front entry");
-            let (mut b_key, _) = self.back_b.back_entry().expect("should have front entry");
-            while self.back_b.is_valid() && a_key == b_key {
-                self.back_b.try_next_back()?;
-                if self.back_b.is_valid() { (b_key, _) = self.back_b.back_entry().expect("should have front entry"); }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn create(a: A, b: B) -> Result<Self> {
-        let mut front_a = a.clone();
-        let mut front_b = b.clone();
-        front_a.try_next()?;
-        front_b.try_next()?;
-        let mut back_a = a.clone();
-        let mut back_b = b.clone();
-        back_a.try_next_back()?;
-        back_b.try_next_back()?;
-        let mut this = Self {
-            front_a,
-            front_b,
-            front_a_is_next: false,
-            front_entry: None,
-            back_a,
-            back_b,
-            back_a_is_next: false,
-            back_entry: None,
-        };
-        this.front_skip_b()?;
-        this.back_skip_b()?;
-        this.front_a_is_next = Self::front_a_is_next(&this.front_a, &this.front_b);
-        this.back_a_is_next = Self::back_a_is_next(&this.back_a, &this.back_b);
-        Ok(this)
-    }
-}
-
-impl<A: StorageIter, B: StorageIter> StorageIter for TwoMergeIter<A, B> {
-    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        self.front_entry.clone()
-    }
-
-    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        self.back_entry.clone()
-    }
-
-    fn is_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        match self.front_a_is_next {
-            true => {
-                self.front_entry = self.front_a.front_entry();
-                self.front_a.try_next()?;
-            },
-
-            false => {
-                self.front_entry = self.front_b.front_entry();
-                self.front_b.try_next()?;
-            }
-        };
-        self.front_skip_b()?;
-        self.front_a_is_next = Self::front_a_is_next(&self.front_a, &self.front_b);
-        Ok(self.front_entry.clone())
-    }
-
-    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        match self.back_a_is_next {
-            true => {
-                self.back_entry = self.back_a.back_entry();
-                self.back_a.try_next_back()?;
-            },
-
-            false => {
-                self.back_entry = self.back_b.back_entry();
-                self.back_b.try_next_back()?;
-            }
-        };
-        self.back_skip_b()?;
-        self.back_a_is_next = Self::back_a_is_next(&self.back_a, &self.back_b);
-        Ok(self.back_entry.clone())
-    }
-}
-
-impl<A: StorageIter, B: StorageIter> Iterator for TwoMergeIter<A, B> {
-    type Item = Result<(Vec<u8>, Vec<u8>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.try_next().transpose()
-    }
-}
-
-impl<A: StorageIter, B: StorageIter> DoubleEndedIterator for TwoMergeIter<A, B> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.try_next_back().transpose()
-    }
-}
-
-// ============================================================================================= //
-
-pub trait StorageIterator {
-    /// Get the current value.
-    fn value(&self) -> &[u8];
-
-    /// Get the current key.
-    fn key(&self) -> &[u8];
-
-    /// Check if the current iterator is valid.
-    fn is_valid(&self) -> bool;
-
-    /// Move to the next position.
-    fn next(&mut self) -> crate::error::Result<()>;
-}
-
-struct HeapWrapper<I: StorageIterator>(pub usize, pub Box<I>);
-
-impl<I: StorageIterator> PartialEq for HeapWrapper<I> {
-    fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other).unwrap() == cmp::Ordering::Equal
-    }
-}
-
-impl<I: StorageIterator> Eq for HeapWrapper<I> {}
-
-impl<I: StorageIterator> PartialOrd for HeapWrapper<I> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        match self.1.key().cmp(other.1.key()) {
-            cmp::Ordering::Greater => Some(cmp::Ordering::Greater),
-            cmp::Ordering::Less => Some(cmp::Ordering::Less),
-            cmp::Ordering::Equal => self.0.partial_cmp(&other.0),
-        }
-        .map(|x| x.reverse())
-    }
-}
-
-impl<I: StorageIterator> Ord for HeapWrapper<I> {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-/// Merge multiple iterators of the same type. If the same key occurs multiple times in some
-/// iterators, perfer the one with smaller index.
-pub struct MergeIterator<I: StorageIterator> {
-    iters: BinaryHeap<HeapWrapper<I>>,
-    current: Option<HeapWrapper<I>>,
-}
-
-impl<I: StorageIterator> MergeIterator<I> {
-    pub fn create(iters: Vec<Box<I>>) -> Self {
-        if iters.is_empty() {
-            return Self {
-                iters: BinaryHeap::new(),
-                current: None
-            };
-        }
-
-        let mut heap = BinaryHeap::new();
-        
-        // All invalid, select the last one as the current.
-        if iters.iter().all(|iter| !iter.is_valid()) {
-            let mut iters = iters;
-            return Self {
-                iters: heap,
-                current: iters.pop().map(|iter|HeapWrapper(0, iter)),
-            }
-        }
-
-        for (idx, iter) in iters.into_iter().enumerate() {
-            if iter.is_valid() {
-                heap.push(HeapWrapper(idx, iter));
-            }
-        }
-
-        let current = heap.pop();
-        Self {
-            iters: heap,
-            current,
-        }
-    }
-}
-
-impl<I: StorageIterator> StorageIterator for MergeIterator<I> {
-    fn key(&self) -> &[u8] {
-        self.current.as_ref().unwrap().1.key()
-    }
-
-    fn value(&self) -> &[u8] {
-        self.current.as_ref().unwrap().1.value()
-    }
-
-    fn is_valid(&self) -> bool {
-        self.current
-            .as_ref()
-            .map(|wrapper| wrapper.1.is_valid())
-            .unwrap_or(false)
-    }
-
-    fn next(&mut self) -> Result<()> {
-        let current = self.current.as_mut().unwrap();
-
-        while let Some(mut iter) = self.iters.peek_mut() {
-            if iter.1.key() == current.1.key() {
-                if let err @ Err(_) = iter.1.next() {
-                    PeekMut::pop(iter);
-                    return err;
-                }
-                if !iter.1.is_valid() {
-                    PeekMut::pop(iter);
-                }
-            } else {
-                break;
-            }
-        }
-
-        current.1.next()?;
-
-        if !current.1.is_valid() {
-            if let Some(iter) = self.iters.pop() {
-                *current = iter;
-            }
-            return Ok(());
-        }
-
-        if let Some(mut iter) = self.iters.peek_mut() {
-            if *current < *iter {
-                std::mem::swap(&mut *iter, current);
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Merges two iterators of different types into one. If the two iterators have the same key, only
-/// produce the key once and prefer the entry from A.
-pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
-    a: A,
-    b: B,
-    a_is_next: bool,
-}
-
-impl<A: StorageIterator, B: StorageIterator> TwoMergeIterator<A, B> {
-    fn a_is_next(a: &A, b: &B) -> bool {
-        if !a.is_valid() {
-            return false;
-        }
-        if !b.is_valid() {
-            return true;
-        }
-        a.key() < b.key()
-    }
-
-    fn skip_b(&mut self) -> Result<()> {
-        if self.a.is_valid() {
-            while self.b.is_valid() && self.a.key() == self.b.key() {
-                self.b.next()?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn create(a: A, b: B) -> Result<Self> {
-        let mut this = Self {
-            a,
-            b,
-            a_is_next: false,
-        };
-        this.skip_b()?;
-        this.a_is_next = Self::a_is_next(&this.a, &this.b);
-        Ok(this)
-    }
-}
-
-impl<A: StorageIterator, B: StorageIterator> StorageIterator for TwoMergeIterator<A, B> {
-    fn key(&self) -> &[u8] {
-        match self.a_is_next {
-            true => self.a.key(),
-            false => self.b.key()
-        }
-    }
-
-    fn value(&self) -> &[u8] {
-        match self.a_is_next {
-            true => self.a.value(),
-            false => self.b.value(),
-        }
-    }
-
-    fn is_valid(&self) -> bool {
-        match self.a_is_next {
-            true => self.a.is_valid(),
-            false => self.b.is_valid(),
-        }
-    }
-
-    fn next(&mut self) -> Result<()> {
-        match self.a_is_next {
-            true => self.a.next()?,
-            false => self.b.next()?,
-        }
-        self.skip_b()?;
-        self.a_is_next = Self::a_is_next(&self.a, &self.b);
-        Ok(())
-    }
-}
-
-
-
-#[derive(Clone)]
-pub struct MockIterator {
-    pub data: Vec<(Bytes, Bytes)>,
-    pub index: usize,
-}
-
-impl MockIterator {
-    pub fn new(data: Vec<(Bytes, Bytes)>) -> Self {
-        Self { data, index: 0 }
-    }
-}
-
-impl StorageIterator for MockIterator {
-    fn next(&mut self) -> Result<()> {
-        if self.index < self.data.len() {
-            self.index += 1;
-        }
-        Ok(())
-    }
-
-    fn key(&self) -> &[u8] {
-        self.data[self.index].0.as_ref()
-    }
-
-    fn value(&self) -> &[u8] {
-        self.data[self.index].1.as_ref()
-    }
-
-    fn is_valid(&self) -> bool {
-        self.index < self.data.len()
-    }
-}
-
-// ============================================================================================= //
 
 #[cfg(test)]
 fn as_bytes(x: &[u8]) -> Bytes {
@@ -956,24 +764,56 @@ fn test_merge_empty_iter() {
 fn check_result_two(iter: impl StorageIter, expected: Vec<(Bytes, Bytes)>) {
     let mut iter = iter;
     for (k, v) in expected {
-        // assert!(iter.is_valid());
+        assert!(iter.is_valid());
         iter.next().unwrap();
         assert_eq!(&iter.front_entry().unwrap().0[..], k.as_ref());
         assert_eq!(&iter.front_entry().unwrap().1[..], v.as_ref());
     }
-    // assert!(!iter.is_valid());
+    assert!(!iter.is_valid());
 }
 
 #[cfg(test)]
 fn check_result_two_rev(iter: impl StorageIter, expected: Vec<(Bytes, Bytes)>) {
     let mut iter = iter;
     for (k, v) in expected {
-        // assert!(iter.is_valid());
+        assert!(iter.is_valid());
         iter.next_back().unwrap();
         assert_eq!(&iter.back_entry().unwrap().0[..], k.as_ref());
         assert_eq!(&iter.back_entry().unwrap().1[..], v.as_ref());
     }
-    // assert!(!iter.is_valid());
+    assert!(!iter.is_valid());
+}
+
+#[cfg(test)]
+fn check_result_two_random(iter: impl StorageIter, expected: Vec<(Bytes, Bytes)>) {
+    use rand::Rng;
+    let mut iter = iter;
+    let mut forward = 0;
+    let mut backward = expected.len() - 1;
+    for _ in 0..expected.len() {
+        match rand::thread_rng().gen_range(0..=1) {
+            1 => {
+                let (k, v) = &expected[forward];
+                assert!(iter.is_valid());
+                iter.next().unwrap();
+                assert_eq!(&iter.front_entry().unwrap().0[..], k.as_ref());
+                assert_eq!(&iter.front_entry().unwrap().1[..], v.as_ref());
+                forward += 1;
+            },
+
+            0 => {
+                let (k, v) = &expected[backward];
+                assert!(iter.is_valid());
+                iter.next_back().unwrap();
+                assert_eq!(&iter.back_entry().unwrap().0[..], k.as_ref());
+                assert_eq!(&iter.back_entry().unwrap().1[..], v.as_ref());
+                backward -= 1;
+            },
+
+            _ => { assert!(false) },
+        };
+    }
+    assert!(!iter.is_valid());
 }
 
 #[test]
@@ -1000,6 +840,16 @@ fn test_merge_1_two_iter() {
         ],
     );
     let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_random(
+        iter_rev,
+        vec![
+            (Bytes::from("a"), Bytes::from("1.1")),
+            (Bytes::from("b"), Bytes::from("2.1")),
+            (Bytes::from("c"), Bytes::from("3.1")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    );
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
     check_result_two_rev(
         iter_rev,
         vec![
@@ -1010,6 +860,406 @@ fn test_merge_1_two_iter() {
         ],
     )
 }
+
+#[test]
+fn test_merge_2_two_iter() {
+    let i2 = MockIter::new(vec![
+        (Bytes::from("a"), Bytes::from("1.1")),
+        (Bytes::from("b"), Bytes::from("2.1")),
+        (Bytes::from("c"), Bytes::from("3.1")),
+    ]);
+    let i1 = MockIter::new(vec![
+        (Bytes::from("a"), Bytes::from("1.2")),
+        (Bytes::from("b"), Bytes::from("2.2")),
+        (Bytes::from("c"), Bytes::from("3.2")),
+        (Bytes::from("d"), Bytes::from("4.2")),
+    ]);
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_rev(
+        iter_rev,
+        vec![
+            (Bytes::from("d"), Bytes::from("4.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("a"), Bytes::from("1.2")),
+        ],
+    );
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_random(
+        iter_rev,
+        vec![
+            (Bytes::from("a"), Bytes::from("1.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    );
+    let iter = TwoMergeIter::create(i1, i2).unwrap();
+    check_result_two(
+        iter,
+        vec![
+            (Bytes::from("a"), Bytes::from("1.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    )
+}
+
+#[test]
+fn test_merge_3_two_iter() {
+    let i2 = MockIter::new(vec![
+        (Bytes::from("a"), Bytes::from("1.1")),
+        (Bytes::from("b"), Bytes::from("2.1")),
+        (Bytes::from("c"), Bytes::from("3.1")),
+    ]);
+    let i1 = MockIter::new(vec![
+        (Bytes::from("b"), Bytes::from("2.2")),
+        (Bytes::from("c"), Bytes::from("3.2")),
+        (Bytes::from("d"), Bytes::from("4.2")),
+    ]);
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_rev(
+        iter_rev,
+        vec![
+            (Bytes::from("d"), Bytes::from("4.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("a"), Bytes::from("1.1")),
+        ],
+    );
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_random(
+        iter_rev,
+        vec![
+            (Bytes::from("a"), Bytes::from("1.1")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    );
+    let iter = TwoMergeIter::create(i1, i2).unwrap();
+    check_result_two(
+        iter,
+        vec![
+            (Bytes::from("a"), Bytes::from("1.1")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    )
+}
+
+#[test]
+fn test_merge_4_two_iter() {
+    let i2 = MockIter::new(vec![]);
+    let i1 = MockIter::new(vec![
+        (Bytes::from("b"), Bytes::from("2.2")),
+        (Bytes::from("c"), Bytes::from("3.2")),
+        (Bytes::from("d"), Bytes::from("4.2")),
+    ]);
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_rev(
+        iter_rev,
+        vec![
+            (Bytes::from("d"), Bytes::from("4.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+        ],
+    );
+    let iter = TwoMergeIter::create(i1, i2).unwrap();
+    check_result_two(
+        iter,
+        vec![
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    );
+    let i1 = MockIter::new(vec![]);
+    let i2 = MockIter::new(vec![
+        (Bytes::from("b"), Bytes::from("2.2")),
+        (Bytes::from("c"), Bytes::from("3.2")),
+        (Bytes::from("d"), Bytes::from("4.2")),
+    ]);
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_rev(
+        iter_rev,
+        vec![
+            (Bytes::from("d"), Bytes::from("4.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("b"), Bytes::from("2.2")),
+        ],
+    );
+    let iter = TwoMergeIter::create(i1, i2).unwrap();
+    check_result_two(
+        iter,
+        vec![
+            (Bytes::from("b"), Bytes::from("2.2")),
+            (Bytes::from("c"), Bytes::from("3.2")),
+            (Bytes::from("d"), Bytes::from("4.2")),
+        ],
+    );
+}
+
+#[test]
+fn test_merge_5_two_iter() {
+    let i2 = MockIter::new(vec![]);
+    let i1 = MockIter::new(vec![]);
+    let iter_rev = TwoMergeIter::create(i1.clone(), i2.clone()).unwrap();
+    check_result_two_rev(iter_rev, vec![]);
+    let iter = TwoMergeIter::create(i1, i2).unwrap();
+    check_result_two(iter, vec![])
+}
+
+
+// ============================================================================================= //
+
+
+pub trait StorageIterator {
+    /// Get the current value.
+    fn value(&self) -> &[u8];
+
+    /// Get the current key.
+    fn key(&self) -> &[u8];
+
+    /// Check if the current iterator is valid.
+    fn is_valid(&self) -> bool;
+
+    /// Move to the next position.
+    fn next(&mut self) -> crate::error::Result<()>;
+}
+
+struct HeapWrapper<I: StorageIterator>(pub usize, pub Box<I>);
+
+impl<I: StorageIterator> PartialEq for HeapWrapper<I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other).unwrap() == cmp::Ordering::Equal
+    }
+}
+
+impl<I: StorageIterator> Eq for HeapWrapper<I> {}
+
+impl<I: StorageIterator> PartialOrd for HeapWrapper<I> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        match self.1.key().cmp(other.1.key()) {
+            cmp::Ordering::Greater => Some(cmp::Ordering::Greater),
+            cmp::Ordering::Less => Some(cmp::Ordering::Less),
+            cmp::Ordering::Equal => self.0.partial_cmp(&other.0),
+        }
+        .map(|x| x.reverse())
+    }
+}
+
+impl<I: StorageIterator> Ord for HeapWrapper<I> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+/// Merge multiple iterators of the same type. If the same key occurs multiple times in some
+/// iterators, perfer the one with smaller index.
+pub struct MergeIterator<I: StorageIterator> {
+    iters: BinaryHeap<HeapWrapper<I>>,
+    current: Option<HeapWrapper<I>>,
+}
+
+impl<I: StorageIterator> MergeIterator<I> {
+    pub fn create(iters: Vec<Box<I>>) -> Self {
+        if iters.is_empty() {
+            return Self {
+                iters: BinaryHeap::new(),
+                current: None
+            };
+        }
+
+        let mut heap = BinaryHeap::new();
+        
+        // All invalid, select the last one as the current.
+        if iters.iter().all(|iter| !iter.is_valid()) {
+            let mut iters = iters;
+            return Self {
+                iters: heap,
+                current: iters.pop().map(|iter|HeapWrapper(0, iter)),
+            }
+        }
+
+        for (idx, iter) in iters.into_iter().enumerate() {
+            if iter.is_valid() {
+                heap.push(HeapWrapper(idx, iter));
+            }
+        }
+
+        let current = heap.pop();
+        Self {
+            iters: heap,
+            current,
+        }
+    }
+}
+
+impl<I: StorageIterator> StorageIterator for MergeIterator<I> {
+    fn key(&self) -> &[u8] {
+        self.current.as_ref().unwrap().1.key()
+    }
+
+    fn value(&self) -> &[u8] {
+        self.current.as_ref().unwrap().1.value()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.current
+            .as_ref()
+            .map(|wrapper| wrapper.1.is_valid())
+            .unwrap_or(false)
+    }
+
+    fn next(&mut self) -> Result<()> {
+        let current = self.current.as_mut().unwrap();
+
+        while let Some(mut iter) = self.iters.peek_mut() {
+            if iter.1.key() == current.1.key() {
+                if let err @ Err(_) = iter.1.next() {
+                    PeekMut::pop(iter);
+                    return err;
+                }
+                if !iter.1.is_valid() {
+                    PeekMut::pop(iter);
+                }
+            } else {
+                break;
+            }
+        }
+
+        current.1.next()?;
+
+        if !current.1.is_valid() {
+            if let Some(iter) = self.iters.pop() {
+                *current = iter;
+            }
+            return Ok(());
+        }
+
+        if let Some(mut iter) = self.iters.peek_mut() {
+            if *current < *iter {
+                std::mem::swap(&mut *iter, current);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Merges two iterators of different types into one. If the two iterators have the same key, only
+/// produce the key once and prefer the entry from A.
+pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
+    a: A,
+    b: B,
+    a_is_next: bool,
+}
+
+impl<A: StorageIterator, B: StorageIterator> TwoMergeIterator<A, B> {
+    fn a_is_next(a: &A, b: &B) -> bool {
+        if !a.is_valid() {
+            return false;
+        }
+        if !b.is_valid() {
+            return true;
+        }
+        a.key() < b.key()
+    }
+
+    fn skip_b(&mut self) -> Result<()> {
+        if self.a.is_valid() {
+            while self.b.is_valid() && self.a.key() == self.b.key() {
+                self.b.next()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn create(a: A, b: B) -> Result<Self> {
+        let mut this = Self {
+            a,
+            b,
+            a_is_next: false,
+        };
+        this.skip_b()?;
+        this.a_is_next = Self::a_is_next(&this.a, &this.b);
+        Ok(this)
+    }
+}
+
+impl<A: StorageIterator, B: StorageIterator> StorageIterator for TwoMergeIterator<A, B> {
+    fn key(&self) -> &[u8] {
+        match self.a_is_next {
+            true => self.a.key(),
+            false => self.b.key()
+        }
+    }
+
+    fn value(&self) -> &[u8] {
+        match self.a_is_next {
+            true => self.a.value(),
+            false => self.b.value(),
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        match self.a_is_next {
+            true => self.a.is_valid(),
+            false => self.b.is_valid(),
+        }
+    }
+
+    fn next(&mut self) -> Result<()> {
+        match self.a_is_next {
+            true => self.a.next()?,
+            false => self.b.next()?,
+        }
+        self.skip_b()?;
+        self.a_is_next = Self::a_is_next(&self.a, &self.b);
+        Ok(())
+    }
+}
+
+
+
+#[derive(Clone)]
+pub struct MockIterator {
+    pub data: Vec<(Bytes, Bytes)>,
+    pub index: usize,
+}
+
+impl MockIterator {
+    pub fn new(data: Vec<(Bytes, Bytes)>) -> Self {
+        Self { data, index: 0 }
+    }
+}
+
+impl StorageIterator for MockIterator {
+    fn next(&mut self) -> Result<()> {
+        if self.index < self.data.len() {
+            self.index += 1;
+        }
+        Ok(())
+    }
+
+    fn key(&self) -> &[u8] {
+        self.data[self.index].0.as_ref()
+    }
+
+    fn value(&self) -> &[u8] {
+        self.data[self.index].1.as_ref()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.index < self.data.len()
+    }
+}
+
+// ============================================================================================= //
+
 
 // ============================================================================================= //
 

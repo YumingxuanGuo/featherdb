@@ -276,8 +276,9 @@ impl StorageIter for SsTableIter {
                     std::cmp::Ordering::Less => true,
                     std::cmp::Ordering::Greater => false,
                     std::cmp::Ordering::Equal => {
-                        if let (Some(f_idx), Some(b_idx)) = (front_iter.front_index, back_iter.back_index) {
-                            f_idx < b_idx
+                        if let (Some(f_idx), Some(b_idx)) = 
+                            (front_iter.front_index, back_iter.back_index) {
+                            f_idx < b_idx - 1
                         } else {
                             true
                         }
@@ -298,53 +299,59 @@ impl StorageIter for SsTableIter {
     }
 
     fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        if self.front_block_iter.is_none() {
-            let block = self.table.read_block_cached(0)?;
-            self.front_block_iter = Some((0, BlockIter::new(block)));
-        }
-        let (idx, iter) = self.front_block_iter.as_mut().expect("should have front iter");
-        let next_entry = match iter.next().transpose()? {
-            Some(entry) => Some(entry),
-            None => {
-                *idx += 1;
-                if *idx < self.table.num_of_blocks() as i32 {
-                    let block = self.table.read_block_cached(*idx as usize)?;
-                    *iter = BlockIter::new(block);
-                    iter.next().transpose()?
-                } else {
-                    None
-                }
-            },
-        };
         match self.is_valid() {
-            false => return Ok(None),
-            true => return Ok(next_entry),
+            false => Ok(None),
+            true => {
+                if self.front_block_iter.is_none() {
+                    let block = self.table.read_block_cached(0)?;
+                    self.front_block_iter = Some((0, BlockIter::new(block)));
+                }
+                let (idx, iter) = self.front_block_iter.as_mut()
+                    .expect("should have front iter");
+                let next_entry = match iter.next().transpose()? {
+                    Some(entry) => Some(entry),
+                    None => {
+                        *idx += 1;
+                        if *idx < self.table.num_of_blocks() as i32 {
+                            let block = self.table.read_block_cached(*idx as usize)?;
+                            *iter = BlockIter::new(block);
+                            iter.next().transpose()?
+                        } else {
+                            None
+                        }
+                    },
+                };
+                Ok(next_entry)
+            }
         }
     }
 
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        if self.back_block_iter.is_none() {
-            let block_idx = self.table.num_of_blocks() - 1;
-            let block = self.table.read_block_cached(block_idx)?;
-            self.back_block_iter = Some((block_idx as i32, BlockIter::new(block)));
-        }
-        let (idx, iter) = self.back_block_iter.as_mut().expect("should have back iter");
-        let next_entry = match iter.next_back().transpose()? {
-            Some(entry) => Some(entry),
-            None => {
-                *idx -= 1;
-                if *idx >= 0 {
-                    let block = self.table.read_block_cached(*idx as usize)?;
-                    *iter = BlockIter::new(block);
-                    iter.next_back().transpose()?
-                } else {
-                    None
-                }
-            },
-        };
         match self.is_valid() {
-            false => return Ok(None),
-            true => return Ok(next_entry),
+            false => Ok(None),
+            true => {
+                if self.back_block_iter.is_none() {
+                    let block_idx = self.table.num_of_blocks() - 1;
+                    let block = self.table.read_block_cached(block_idx)?;
+                    self.back_block_iter = Some((block_idx as i32, BlockIter::new(block)));
+                }
+                let (idx, iter) = self.back_block_iter.as_mut()
+                    .expect("should have back iter");
+                let next_entry = match iter.next_back().transpose()? {
+                    Some(entry) => Some(entry),
+                    None => {
+                        *idx -= 1;
+                        if *idx >= 0 {
+                            let block = self.table.read_block_cached(*idx as usize)?;
+                            *iter = BlockIter::new(block);
+                            iter.next_back().transpose()?
+                        } else {
+                            None
+                        }
+                    },
+                };
+                Ok(next_entry)
+            }
         }
     }
 }
@@ -363,87 +370,7 @@ impl DoubleEndedIterator for SsTableIter {
     }
 }
 
-// ============================================================================================= //
 
-/// An iterator over the contents of an SSTable.
-pub struct SsTableIterator {
-    table: Arc<SsTable>,
-    block_iter: BlockIterator,
-    block_idx: usize,
-}
-
-impl SsTableIterator {
-    /// Create a new iterator and seek to the first key-value pair.
-    pub fn create_and_seek_to_first(table: Arc<SsTable>) -> Result<Self> {
-        let block = table.read_block_cached(0)?;
-        Ok(Self {
-            table,
-            block_iter: BlockIterator::create_and_seek_to_first(block),
-            block_idx: 0
-        })
-    }
-
-    /// Seek to the first key-value pair.
-    pub fn seek_to_first(&mut self) -> Result<()> {
-        let block = self.table.read_block_cached(0)?;
-        self.block_iter = BlockIterator::create_and_seek_to_first(block);
-        self.block_idx = 0;
-        Ok(())
-    }
-
-    /// Create a new iterator and seek to the first key-value pair which >= `key`.
-    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
-        let mut this = SsTableIterator::create_and_seek_to_first(table)?;
-        this.seek_to_key(key)?;
-        Ok(this)
-    }
-
-    /// Seek to the first key-value pair which >= `key`.
-    pub fn seek_to_key(&mut self, key: &[u8]) -> Result<()> {
-        let mut block_idx = self.table.find_block_idx(key);
-        let mut block_iter = 
-            BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
-        if !block_iter.is_valid() {
-            block_idx += 1;
-            if block_idx < self.table.num_of_blocks() {
-                block_iter = 
-                    BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
-            }
-        }
-        self.block_idx = block_idx;
-        self.block_iter = block_iter;
-        Ok(())
-    }
-}
-
-impl StorageIterator for SsTableIterator {
-    fn value(&self) -> &[u8] {
-        self.block_iter.value()
-    }
-
-    fn key(&self) -> &[u8] {
-        self.block_iter.key()
-    }
-
-    fn is_valid(&self) -> bool {
-        self.block_iter.is_valid()
-    }
-
-    fn next(&mut self) -> Result<()> {
-        self.block_iter.next();
-        if !self.block_iter.is_valid() {
-            self.block_idx += 1;
-            if self.block_idx < self.table.num_of_blocks() {
-                self.block_iter = BlockIterator::create_and_seek_to_first(
-                    self.table.read_block_cached(self.block_idx)?
-                );
-            }
-        }
-        Ok(())
-    }
-}
-
-// ============================================================================================= //
 
 #[cfg(test)]
 use tempfile::{tempdir, TempDir};
@@ -514,35 +441,6 @@ fn test_sst_decode() {
 #[cfg(test)]
 fn as_bytes(x: &[u8]) -> Bytes {
     Bytes::copy_from_slice(x)
-}
-
-#[test]
-fn test_sst_iterator() {
-    let (_dir, sst) = generate_sst();
-    let sst = Arc::new(sst);
-    let mut iter = SsTableIterator::create_and_seek_to_first(sst).unwrap();
-    for _ in 0..5 {
-        for i in 0..num_of_keys() {
-            let key = iter.key();
-            let value = iter.value();
-            assert_eq!(
-                key,
-                key_of(i),
-                "expected key: {:?}, actual key: {:?}",
-                as_bytes(&key_of(i)),
-                as_bytes(key)
-            );
-            assert_eq!(
-                value,
-                value_of(i),
-                "expected value: {:?}, actual value: {:?}",
-                as_bytes(&value_of(i)),
-                as_bytes(value)
-            );
-            iter.next().unwrap();
-        }
-        iter.seek_to_first().unwrap();
-    }
 }
 
 #[test]
@@ -639,6 +537,60 @@ fn test_sst_iter_intersection() {
 }
 
 #[test]
+fn test_sst_iter_intersection_random() {
+    use rand::Rng;
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let mut iter = SsTableIter::new(sst).unwrap();
+    let mut forward = 0;
+    let mut backward = 0;
+    for _ in 0..num_of_keys() {
+        match rand::thread_rng().gen_range(0..=1) {
+            1 => {
+                let (key, value) = iter.next().unwrap().unwrap();
+                assert_eq!(
+                    &key[..],
+                    key_of(forward),
+                    "expected key: {:?}, actual key: {:?}",
+                    as_bytes(&key_of(forward)),
+                    as_bytes(&key[..])
+                );
+                assert_eq!(
+                    &value[..],
+                    value_of(forward),
+                    "expected value: {:?}, actual value: {:?}",
+                    as_bytes(&value_of(forward)),
+                    as_bytes(&value[..])
+                );
+                forward += 1;
+            },
+
+            0 => {
+                let (back_key, back_value) = iter.next_back().unwrap().unwrap();
+                assert_eq!(
+                    &back_key[..],
+                    key_of(num_of_keys() - backward - 1),
+                    "expected key: {:?}, actual key: {:?}",
+                    as_bytes(&key_of(num_of_keys() - backward - 1)),
+                    as_bytes(&back_key[..])
+                );
+                assert_eq!(
+                    &back_value[..],
+                    value_of(num_of_keys() - backward - 1),
+                    "expected value: {:?}, actual value: {:?}",
+                    as_bytes(&value_of(num_of_keys() - backward - 1)),
+                    as_bytes(&back_value[..])
+                );
+                backward += 1;
+            },
+
+            _ => { assert!(false) },
+        }
+    }
+    assert!(!iter.is_valid());
+}
+
+#[test]
 fn test_sst_seek_key() {
     let (_dir, sst) = generate_sst();
     let sst = Arc::new(sst);
@@ -665,5 +617,120 @@ fn test_sst_seek_key() {
                 .unwrap();
         }
         iter.seek_to_key(b"k").unwrap();
+    }
+}
+
+
+
+// ============================================================================================= //
+
+
+
+/// An iterator over the contents of an SSTable.
+pub struct SsTableIterator {
+    table: Arc<SsTable>,
+    block_iter: BlockIterator,
+    block_idx: usize,
+}
+
+impl SsTableIterator {
+    /// Create a new iterator and seek to the first key-value pair.
+    pub fn create_and_seek_to_first(table: Arc<SsTable>) -> Result<Self> {
+        let block = table.read_block_cached(0)?;
+        Ok(Self {
+            table,
+            block_iter: BlockIterator::create_and_seek_to_first(block),
+            block_idx: 0
+        })
+    }
+
+    /// Seek to the first key-value pair.
+    pub fn seek_to_first(&mut self) -> Result<()> {
+        let block = self.table.read_block_cached(0)?;
+        self.block_iter = BlockIterator::create_and_seek_to_first(block);
+        self.block_idx = 0;
+        Ok(())
+    }
+
+    /// Create a new iterator and seek to the first key-value pair which >= `key`.
+    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
+        let mut this = SsTableIterator::create_and_seek_to_first(table)?;
+        this.seek_to_key(key)?;
+        Ok(this)
+    }
+
+    /// Seek to the first key-value pair which >= `key`.
+    pub fn seek_to_key(&mut self, key: &[u8]) -> Result<()> {
+        let mut block_idx = self.table.find_block_idx(key);
+        let mut block_iter = 
+            BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
+        if !block_iter.is_valid() {
+            block_idx += 1;
+            if block_idx < self.table.num_of_blocks() {
+                block_iter = 
+                    BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
+            }
+        }
+        self.block_idx = block_idx;
+        self.block_iter = block_iter;
+        Ok(())
+    }
+}
+
+impl StorageIterator for SsTableIterator {
+    fn value(&self) -> &[u8] {
+        self.block_iter.value()
+    }
+
+    fn key(&self) -> &[u8] {
+        self.block_iter.key()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.block_iter.is_valid()
+    }
+
+    fn next(&mut self) -> Result<()> {
+        self.block_iter.next();
+        if !self.block_iter.is_valid() {
+            self.block_idx += 1;
+            if self.block_idx < self.table.num_of_blocks() {
+                self.block_iter = BlockIterator::create_and_seek_to_first(
+                    self.table.read_block_cached(self.block_idx)?
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================================= //
+
+#[test]
+fn test_sst_iterator() {
+    let (_dir, sst) = generate_sst();
+    let sst = Arc::new(sst);
+    let mut iter = SsTableIterator::create_and_seek_to_first(sst).unwrap();
+    for _ in 0..5 {
+        for i in 0..num_of_keys() {
+            let key = iter.key();
+            let value = iter.value();
+            assert_eq!(
+                key,
+                key_of(i),
+                "expected key: {:?}, actual key: {:?}",
+                as_bytes(&key_of(i)),
+                as_bytes(key)
+            );
+            assert_eq!(
+                value,
+                value_of(i),
+                "expected value: {:?}, actual value: {:?}",
+                as_bytes(&value_of(i)),
+                as_bytes(value)
+            );
+            iter.next().unwrap();
+        }
+        iter.seek_to_first().unwrap();
     }
 }
