@@ -11,7 +11,7 @@ pub const SIZEOF_U16: usize = std::mem::size_of::<u16>();
 /// key-value pairs.
 pub struct Block {
     data: Vec<u8>,
-    offsets: Vec<u16>,
+    pub(super) offsets: Vec<u16>,
 }
 
 /// Data alignment: 
@@ -107,7 +107,7 @@ impl BlockBuilder {
 /// Rust-compatible iterator on a block.
 pub struct BlockIter {
     /// The block we're iterating across.
-    block: Arc<Block>,
+    pub(super) block: Arc<Block>,
     /// The front cursor keeps track of the last returned value from the front.
     pub(super) front_index: Option<i32>,
     /// The back cursor keeps track of the last returned value from the back.
@@ -134,6 +134,60 @@ impl BlockIter {
         let value = entry_raw[..value_len].to_vec();
         Some((key, value))
     }
+
+    /// Creates a block iterator and seek to the last key that < `key`.
+    pub fn create_and_seek_to_key(block: Arc<Block>, key: &[u8]) -> Self {
+        let mut iter = BlockIter::new(block);
+        iter.front_seek_to_key(key);
+        iter
+    }
+
+    /// Creates a block iterator and seek to the last key that < `key`.
+    pub fn create_and_back_seek_to_key(block: Arc<Block>, key: &[u8]) -> Self {
+        let mut iter = BlockIter::new(block);
+        iter.back_seek_to_key(key);
+        iter
+    }
+
+    /// Seek to the first key that < `key`.
+    pub fn front_seek_to_key(&mut self, key: &[u8]) {
+        let mut low = 0;
+        let mut high = self.block.offsets.len();
+        while low < high {
+            let mid = (low + high) / 2;
+            if let Some((mid_key, _)) = self.peek_index(mid as i32) {
+                match &mid_key[..].cmp(key) {
+                    std::cmp::Ordering::Less => low = mid + 1,
+                    std::cmp::Ordering::Equal => {
+                        self.front_index = Some(mid as i32 - 1);
+                        return;
+                    }
+                    std::cmp::Ordering::Greater => high = mid,
+                }
+            }
+        }
+        self.front_index = Some(low as i32 - 1);
+    }
+
+    /// Seek to the first key that > `key`.
+    pub fn back_seek_to_key(&mut self, key: &[u8]) {
+        let mut low = 0;
+        let mut high = self.block.offsets.len();
+        while low < high {
+            let mid = (low + high) / 2;
+            if let Some((mid_key, _)) = self.peek_index(mid as i32) {
+                match &mid_key[..].cmp(key) {
+                    std::cmp::Ordering::Less => low = mid + 1,
+                    std::cmp::Ordering::Equal => {
+                        self.back_index = Some(mid as i32);
+                        return;
+                    }
+                    std::cmp::Ordering::Greater => high = mid,
+                }
+            }
+        }
+        self.back_index = Some(low as i32);
+    }
 }
 
 impl StorageIter for BlockIter {
@@ -149,11 +203,11 @@ impl StorageIter for BlockIter {
         match (self.front_index, self.back_index) {
             (Some(f_idx), Some(b_idx)) => {
                 f_idx < b_idx - 1 &&
-                0 <= f_idx && f_idx < self.block.offsets.len() as i32 &&
-                0 <= b_idx && b_idx < self.block.offsets.len() as i32
+                f_idx < self.block.offsets.len() as i32 &&
+                0 <= b_idx
             },
-            (Some(f_idx), None) => { 0 <= f_idx && f_idx < self.block.offsets.len() as i32 },
-            (None, Some(b_idx)) => { 0 <= b_idx && b_idx < self.block.offsets.len() as i32 },
+            (Some(f_idx), None) => { f_idx < self.block.offsets.len() as i32 - 1 },
+            (None, Some(b_idx)) => { 0 < b_idx },
             (None, None) => { true },
         }
     }
@@ -410,6 +464,33 @@ fn test_block_iter_intersection_random() {
         };
     }
     assert!(!iter.is_valid());
+}
+
+#[test]
+fn test_block_seek_key_iter() {
+    let block = Arc::new(generate_block());
+    let mut iter = BlockIter::create_and_seek_to_key(block, &key_of(0));
+    for offset in 1..=5 {
+        for i in 0..num_of_keys() {
+            let (key, value) = iter.next().unwrap().unwrap();
+            assert_eq!(
+                key,
+                key_of(i),
+                "expected key: {:?}, actual key: {:?}",
+                as_bytes(&key_of(i)),
+                as_bytes(&key)
+            );
+            assert_eq!(
+                value,
+                value_of(i),
+                "expected value: {:?}, actual value: {:?}",
+                as_bytes(&value_of(i)),
+                as_bytes(&value)
+            );
+            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes());
+        }
+        iter.front_seek_to_key(b"k");
+    }
 }
 
 

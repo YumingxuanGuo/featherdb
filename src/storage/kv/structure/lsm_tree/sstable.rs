@@ -252,6 +252,56 @@ impl SsTableIter {
             back_block_iter: None,
         })
     }
+
+    /// Create a new iterator and seek to the last key-value pair which < `key`.
+    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
+        let mut this = SsTableIter::new(table)?;
+        this.front_seek_to_key(key)?;
+        Ok(this)
+    }
+    
+    /// Create a new iterator and seek to the last key-value pair which < `key`.
+    pub fn create_and_back_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
+        let mut this = SsTableIter::new(table)?;
+        this.back_seek_to_key(key)?;
+        Ok(this)
+    }
+
+    /// Seek to the last key-value pair which < `key`.
+    pub fn front_seek_to_key(&mut self, key: &[u8]) -> Result<()> {
+        let mut block_idx = self.table.find_block_idx(key);
+        let mut block_iter = BlockIter::create_and_seek_to_key(
+            self.table.read_block_cached(block_idx)?, key
+        );
+        if !block_iter.is_valid() {
+            block_idx += 1;
+            if block_idx < self.table.num_of_blocks() {
+                block_iter = BlockIter::create_and_seek_to_key(
+                    self.table.read_block_cached(block_idx)?, key
+                );
+            }
+        }
+        self.front_block_iter = Some((block_idx as i32, block_iter));
+        Ok(())
+    }
+
+    /// Seek to the last key-value pair which < `key`.
+    pub fn back_seek_to_key(&mut self, key: &[u8]) -> Result<()> {
+        let mut block_idx = self.table.find_block_idx(key) as i32;
+        let mut block_iter = BlockIter::create_and_back_seek_to_key(
+                self.table.read_block_cached(block_idx as usize)?, key
+            );
+        if !block_iter.is_valid() {
+            block_idx -= 1;
+            if block_idx >= 0 {
+                block_iter = BlockIter::create_and_back_seek_to_key(
+                    self.table.read_block_cached(block_idx as usize)?, key
+                );
+            }
+        }
+        self.back_block_iter = Some((block_idx as i32, block_iter));
+        Ok(())
+    }
 }
 
 impl StorageIter for SsTableIter {
@@ -273,25 +323,33 @@ impl StorageIter for SsTableIter {
         match (&self.front_block_iter, &self.back_block_iter) {
             (Some((front_idx, front_iter)), Some((back_idx, back_iter))) => {
                 match front_idx.cmp(back_idx) {
-                    std::cmp::Ordering::Less => true,
+                    std::cmp::Ordering::Less => {
+                        let (f_idx, b_idx) = (
+                            front_iter.front_index.expect("should have front index"), 
+                            back_iter.back_index.expect("should have back index")
+                        );
+                        (*front_idx < *back_idx - 1) || 
+                        (f_idx < front_iter.block.offsets.len() as i32 - 1 || b_idx > 0)
+                    },
                     std::cmp::Ordering::Greater => false,
                     std::cmp::Ordering::Equal => {
-                        if let (Some(f_idx), Some(b_idx)) = 
-                            (front_iter.front_index, back_iter.back_index) {
-                            f_idx < b_idx - 1
-                        } else {
-                            true
-                        }
+                        let (f_idx, b_idx) = (
+                            front_iter.front_index.expect("should have front index"), 
+                            back_iter.back_index.expect("should have back index")
+                        );
+                        f_idx < b_idx - 1
                     }
                 }
             },
 
             (Some((front_idx, front_iter)), None) => {
-                0 <= *front_idx && *front_idx < self.table.num_of_blocks() as i32 && front_iter.is_valid()
+                (0 <= *front_idx && *front_idx < self.table.num_of_blocks() as i32 - 1) ||
+                (*front_idx == self.table.num_of_blocks() as i32 - 1 && front_iter.is_valid() )
             },
 
             (None, Some((back_idx, back_iter))) => {
-                0 <= *back_idx && *back_idx < self.table.num_of_blocks() as i32 && back_iter.is_valid()
+                (0 < *back_idx && *back_idx < self.table.num_of_blocks() as i32) ||
+                (0 == *back_idx && back_iter.is_valid())
             },
 
             (None, None) => { true }
@@ -493,7 +551,6 @@ fn test_sst_iter_rev() {
             as_bytes(&value[..])
         );
     }
-    println!("i = {i}");
 }
 
 #[test]
@@ -591,32 +648,31 @@ fn test_sst_iter_intersection_random() {
 }
 
 #[test]
-fn test_sst_seek_key() {
+fn test_sst_seek_key_iter() {
     let (_dir, sst) = generate_sst();
     let sst = Arc::new(sst);
-    let mut iter = SsTableIterator::create_and_seek_to_key(sst, &key_of(0)).unwrap();
+    let mut iter = SsTableIter::create_and_seek_to_key(sst, &key_of(0)).unwrap();
     for offset in 1..=5 {
         for i in 0..num_of_keys() {
-            let key = iter.key();
-            let value = iter.value();
+            let (key, value) = iter.next().unwrap().unwrap();
             assert_eq!(
                 key,
                 key_of(i),
                 "expected key: {:?}, actual key: {:?}",
                 as_bytes(&key_of(i)),
-                as_bytes(key)
+                as_bytes(&key)
             );
             assert_eq!(
                 value,
                 value_of(i),
                 "expected value: {:?}, actual value: {:?}",
                 as_bytes(&value_of(i)),
-                as_bytes(value)
+                as_bytes(&value)
             );
-            iter.seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes())
+            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes())
                 .unwrap();
         }
-        iter.seek_to_key(b"k").unwrap();
+        iter.front_seek_to_key(b"k").unwrap();
     }
 }
 

@@ -78,7 +78,7 @@ impl Clone for MemTableIter {
         Self::create(self.borrow_map().clone(), self.borrow_bound().clone())
     }
 
-    fn clone_from(&mut self, source: &Self) {
+    fn clone_from(&mut self, _source: &Self) {
         unimplemented!()
     }
 }
