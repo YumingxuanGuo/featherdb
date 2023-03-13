@@ -103,6 +103,317 @@ impl BlockBuilder {
     }
 }
 
+#[derive(Clone)]
+/// Rust-compatible iterator on a block.
+pub struct BlockIter {
+    /// The block we're iterating across.
+    block: Arc<Block>,
+    /// The front cursor keeps track of the last returned value from the front.
+    pub(super) front_index: Option<i32>,
+    /// The back cursor keeps track of the last returned value from the back.
+    pub(super) back_index: Option<i32>,
+}
+
+impl BlockIter {
+    /// Creates a new iterator.
+    pub fn new(block: Arc<Block>) -> Self {
+        Self { block, front_index: None, back_index: None }
+    }
+
+    // Returns the entry at index, or None if index out of bound.
+    fn peek_index(&self, index: i32) -> Option<(Vec<u8>, Vec<u8>)>{
+        if index >= self.block.offsets.len() as i32 || index < 0 {
+            return None
+        }
+        let offset = self.block.offsets[index as usize] as usize;
+        let mut entry_raw = &self.block.data[offset..];
+        let key_len = entry_raw.get_u16() as usize;
+        let key = entry_raw[..key_len].to_vec();
+        entry_raw.advance(key_len);
+        let value_len = entry_raw.get_u16() as usize;
+        let value = entry_raw[..value_len].to_vec();
+        Some((key, value))
+    }
+}
+
+impl StorageIter for BlockIter {
+    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.front_index.map_or(None, |idx| self.peek_index(idx))
+    }
+
+    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.back_index.map_or(None, |idx| self.peek_index(idx))
+    }
+    
+    fn is_valid(&self) -> bool {
+        match (self.front_index, self.back_index) {
+            (Some(f_idx), Some(b_idx)) => {
+                f_idx < b_idx &&
+                0 <= f_idx && f_idx < self.block.offsets.len() as i32 &&
+                0 <= b_idx && b_idx < self.block.offsets.len() as i32
+            },
+            (Some(f_idx), None) => { 0 <= f_idx && f_idx < self.block.offsets.len() as i32 },
+            (None, Some(b_idx)) => { 0 <= b_idx && b_idx < self.block.offsets.len() as i32 },
+            (None, None) => { true },
+        }
+    }
+
+    /// Moves to the next key in the block, updating `self.front_index`.
+    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        let next_index = self.front_index.map_or(0, |i| i + 1);
+        let next_entry = self.peek_index(next_index);
+        self.front_index = Some(next_index);
+        // If the front and back index intersects, stops iteration.
+        match self.is_valid() {
+            false => Ok(None),
+            true => Ok(next_entry),
+        }
+    }
+
+    /// Moves to the next key in the block in reverse order, updating `self.back_index`.
+    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i32, |i| i - 1);
+        let next_entry = self.peek_index(next_index);
+        self.back_index = Some(next_index);
+        // If the front and back index intersects, stops iteration.
+        match self.is_valid() {
+            false => Ok(None),
+            true => Ok(next_entry),
+        }
+    }
+}
+
+impl Iterator for BlockIter {
+    type Item = Result<(Vec<u8>, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.try_next().transpose()
+    }
+}
+
+impl DoubleEndedIterator for BlockIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.try_next_back().transpose()
+    }
+}
+
+
+
+#[test]
+fn test_block_build_single_key() {
+    let mut builder = BlockBuilder::new(16);
+    assert!(builder.add(b"233", b"233333"));
+    builder.build();
+}
+
+#[test]
+fn test_block_build_full() {
+    let mut builder = BlockBuilder::new(16);
+    assert!(builder.add(b"11", b"11"));
+    assert!(!builder.add(b"22", b"22"));
+    builder.build();
+}
+
+#[cfg(test)]
+fn key_of(idx: usize) -> Vec<u8> {
+    format!("key_{:03}", idx * 5).into_bytes()
+}
+
+#[cfg(test)]
+fn value_of(idx: usize) -> Vec<u8> {
+    format!("value_{:010}", idx).into_bytes()
+}
+
+#[cfg(test)]
+fn num_of_keys() -> usize {
+    100
+}
+
+#[cfg(test)]
+fn generate_block() -> Block {
+    let mut builder = BlockBuilder::new(10000);
+    for idx in 0..num_of_keys() {
+        let key = key_of(idx);
+        let value = value_of(idx);
+        assert!(builder.add(&key[..], &value[..]));
+    }
+    builder.build()
+}
+
+#[test]
+fn test_block_build_all() {
+    generate_block();
+}
+
+#[test]
+fn test_block_encode() {
+    let block = generate_block();
+    block.encode();
+}
+
+#[test]
+fn test_block_decode() {
+    let block = generate_block();
+    let encoded = block.encode();
+    let decoded_block = Block::decode(&encoded);
+    assert_eq!(block.offsets, decoded_block.offsets);
+    assert_eq!(block.data, decoded_block.data);
+}
+
+#[cfg(test)]
+fn as_bytes(x: &[u8]) -> Bytes {
+    Bytes::copy_from_slice(x)
+}
+
+#[test]
+fn test_block_iter() {
+    let block = Arc::new(generate_block());
+    let iter = BlockIter::new(block);
+    let mut i = 0;
+    for entry in iter {
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+        i += 1;
+    }
+}
+
+#[test]
+fn test_block_iter_rev() {
+    let block = Arc::new(generate_block());
+    let iter = BlockIter::new(block);
+    let mut i = num_of_keys();
+    for entry in iter.rev() {
+        i -= 1;
+        let (key, value) = entry.unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+    }
+}
+
+#[test]
+fn test_block_iter_intersection() {
+    let block = Arc::new(generate_block());
+    let mut iter = BlockIter::new(block);
+    for i in 0..(num_of_keys() / 2) {
+        let (key, value) = iter.next().unwrap().unwrap();
+        assert_eq!(
+            &key[..],
+            key_of(i),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(i)),
+            as_bytes(&key[..])
+        );
+        assert_eq!(
+            &value[..],
+            value_of(i),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(i)),
+            as_bytes(&value[..])
+        );
+
+        let (back_key, back_value) = iter.next_back().unwrap().unwrap();
+        assert_eq!(
+            &back_key[..],
+            key_of(num_of_keys() - i - 1),
+            "expected key: {:?}, actual key: {:?}",
+            as_bytes(&key_of(num_of_keys() - i - 1)),
+            as_bytes(&back_key[..])
+        );
+        assert_eq!(
+            &back_value[..],
+            value_of(num_of_keys() - i - 1),
+            "expected value: {:?}, actual value: {:?}",
+            as_bytes(&value_of(num_of_keys() - i - 1)),
+            as_bytes(&back_value[..])
+        );
+    }
+}
+
+#[test]
+fn test_block_iter_intersection_2() {
+    use rand::Rng;
+    let block = Arc::new(generate_block());
+    let mut iter = BlockIter::new(block);
+    let mut forward = 0;
+    let mut backward = 0;
+    for _ in 0..num_of_keys() {
+        match rand::thread_rng().gen_range(0..=1) {
+            1 => {
+                println!("forward");
+                let (key, value) = iter.next().unwrap().unwrap();
+                assert_eq!(
+                    &key[..],
+                    key_of(forward),
+                    "expected key: {:?}, actual key: {:?}",
+                    as_bytes(&key_of(forward)),
+                    as_bytes(&key[..])
+                );
+                assert_eq!(
+                    &value[..],
+                    value_of(forward),
+                    "expected value: {:?}, actual value: {:?}",
+                    as_bytes(&value_of(forward)),
+                    as_bytes(&value[..])
+                );
+                forward += 1;
+            },
+
+            0 => {
+                println!("backward");
+                let (back_key, back_value) = iter.next_back().unwrap().unwrap();
+                assert_eq!(
+                    &back_key[..],
+                    key_of(num_of_keys() - backward - 1),
+                    "expected key: {:?}, actual key: {:?}",
+                    as_bytes(&key_of(num_of_keys() - backward - 1)),
+                    as_bytes(&back_key[..])
+                );
+                assert_eq!(
+                    &back_value[..],
+                    value_of(num_of_keys() - backward - 1),
+                    "expected value: {:?}, actual value: {:?}",
+                    as_bytes(&value_of(num_of_keys() - backward - 1)),
+                    as_bytes(&back_value[..])
+                );
+                backward += 1;
+            },
+
+            _ => { assert!(false) },
+        };
+    }
+}
+
+
+
+// ============================================================================================= //
+
+
+
 /// Iterates on a block.
 pub struct BlockIterator {
     block: Arc<Block>,
@@ -201,169 +512,7 @@ impl BlockIterator {
     }
 }
 
-// ============================================================================================= //
 
-#[derive(Clone)]
-/// Rust-compatible iterator on a block.
-pub struct BlockIter {
-    /// The block we're iterating across.
-    block: Arc<Block>,
-    /// The front cursor keeps track of the last returned value from the front.
-    pub(super) front_index: Option<i32>,
-    /// The back cursor keeps track of the last returned value from the back.
-    pub(super) back_index: Option<i32>,
-}
-
-impl BlockIter {
-    /// Creates a new iterator.
-    pub fn new(block: Arc<Block>) -> Self {
-        Self { block, front_index: None, back_index: None }
-    }
-
-    // Returns the entry at index, or None if index out of bound.
-    fn peek_index(&self, index: i32) -> Option<(Vec<u8>, Vec<u8>)>{
-        if index >= self.block.offsets.len() as i32 || index < 0 {
-            return None
-        }
-        let offset = self.block.offsets[index as usize] as usize;
-        let mut entry_raw = &self.block.data[offset..];
-        let key_len = entry_raw.get_u16() as usize;
-        let key = entry_raw[..key_len].to_vec();
-        entry_raw.advance(key_len);
-        let value_len = entry_raw.get_u16() as usize;
-        let value = entry_raw[..value_len].to_vec();
-        Some((key, value))
-    }
-}
-
-impl StorageIter for BlockIter {
-    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        self.front_index.map_or(None, |idx| self.peek_index(idx))
-    }
-
-    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        self.back_index.map_or(None, |idx| self.peek_index(idx))
-    }
-    
-    fn is_valid(&self) -> bool {
-        match (self.front_index, self.back_index) {
-            (Some(f_idx), Some(b_idx)) => {
-                f_idx < b_idx &&
-                0 <= f_idx && f_idx < self.block.offsets.len() as i32 &&
-                0 <= b_idx && b_idx < self.block.offsets.len() as i32
-            },
-            (Some(f_idx), None) => { 0 <= f_idx && f_idx < self.block.offsets.len() as i32 },
-            (None, Some(b_idx)) => { 0 <= b_idx && b_idx < self.block.offsets.len() as i32 },
-            (None, None) => { true },
-        }
-    }
-
-    /// Moves to the next key in the block, updating `self.front_index`.
-    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        let next_index = self.front_index.map_or(0, |i| i + 1);
-        let next_entry = self.peek_index(next_index);
-        self.front_index = Some(next_index);
-        // If the front and back index intersects, stops iteration.
-        match self.is_valid() {
-            false => Ok(None),
-            true => Ok(next_entry),
-        }
-    }
-
-    /// Moves to the next key in the block in reverse order, updating `self.back_index`.
-    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
-        let next_index = self.back_index.map_or((self.block.offsets.len() - 1) as i32, |i| i - 1);
-        let next_entry = self.peek_index(next_index);
-        self.back_index = Some(next_index);
-        // If the front and back index intersects, stops iteration.
-        match self.is_valid() {
-            false => Ok(None),
-            true => Ok(next_entry),
-        }
-    }
-}
-
-impl Iterator for BlockIter {
-    type Item = Result<(Vec<u8>, Vec<u8>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.try_next().transpose()
-    }
-}
-
-impl DoubleEndedIterator for BlockIter {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.try_next_back().transpose()
-    }
-}
-
-// ============================================================================================= //
-
-#[test]
-fn test_block_build_single_key() {
-    let mut builder = BlockBuilder::new(16);
-    assert!(builder.add(b"233", b"233333"));
-    builder.build();
-}
-
-#[test]
-fn test_block_build_full() {
-    let mut builder = BlockBuilder::new(16);
-    assert!(builder.add(b"11", b"11"));
-    assert!(!builder.add(b"22", b"22"));
-    builder.build();
-}
-
-#[cfg(test)]
-fn key_of(idx: usize) -> Vec<u8> {
-    format!("key_{:03}", idx * 5).into_bytes()
-}
-
-#[cfg(test)]
-fn value_of(idx: usize) -> Vec<u8> {
-    format!("value_{:010}", idx).into_bytes()
-}
-
-#[cfg(test)]
-fn num_of_keys() -> usize {
-    100
-}
-
-#[cfg(test)]
-fn generate_block() -> Block {
-    let mut builder = BlockBuilder::new(10000);
-    for idx in 0..num_of_keys() {
-        let key = key_of(idx);
-        let value = value_of(idx);
-        assert!(builder.add(&key[..], &value[..]));
-    }
-    builder.build()
-}
-
-#[test]
-fn test_block_build_all() {
-    generate_block();
-}
-
-#[test]
-fn test_block_encode() {
-    let block = generate_block();
-    block.encode();
-}
-
-#[test]
-fn test_block_decode() {
-    let block = generate_block();
-    let encoded = block.encode();
-    let decoded_block = Block::decode(&encoded);
-    assert_eq!(block.offsets, decoded_block.offsets);
-    assert_eq!(block.data, decoded_block.data);
-}
-
-#[cfg(test)]
-fn as_bytes(x: &[u8]) -> Bytes {
-    Bytes::copy_from_slice(x)
-}
 
 #[test]
 fn test_block_iterator() {
@@ -418,94 +567,5 @@ fn test_block_seek_key() {
             iter.seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes());
         }
         iter.seek_to_key(b"k");
-    }
-}
-
-#[test]
-fn test_block_iter() {
-    let block = Arc::new(generate_block());
-    let iter = BlockIter::new(block);
-    let mut i = 0;
-    for entry in iter {
-        let (key, value) = entry.unwrap();
-        assert_eq!(
-            &key[..],
-            key_of(i),
-            "expected key: {:?}, actual key: {:?}",
-            as_bytes(&key_of(i)),
-            as_bytes(&key[..])
-        );
-        assert_eq!(
-            &value[..],
-            value_of(i),
-            "expected value: {:?}, actual value: {:?}",
-            as_bytes(&value_of(i)),
-            as_bytes(&value[..])
-        );
-        i += 1;
-    }
-}
-
-#[test]
-fn test_block_iter_rev() {
-    let block = Arc::new(generate_block());
-    let iter = BlockIter::new(block);
-    let mut i = num_of_keys();
-    for entry in iter.rev() {
-        i -= 1;
-        let (key, value) = entry.unwrap();
-        assert_eq!(
-            &key[..],
-            key_of(i),
-            "expected key: {:?}, actual key: {:?}",
-            as_bytes(&key_of(i)),
-            as_bytes(&key[..])
-        );
-        assert_eq!(
-            &value[..],
-            value_of(i),
-            "expected value: {:?}, actual value: {:?}",
-            as_bytes(&value_of(i)),
-            as_bytes(&value[..])
-        );
-    }
-}
-
-#[test]
-fn test_block_iter_intersection() {
-    let block = Arc::new(generate_block());
-    let mut iter = BlockIter::new(block);
-    for i in 0..(num_of_keys() / 2) {
-        let (key, value) = iter.next().unwrap().unwrap();
-        assert_eq!(
-            &key[..],
-            key_of(i),
-            "expected key: {:?}, actual key: {:?}",
-            as_bytes(&key_of(i)),
-            as_bytes(&key[..])
-        );
-        assert_eq!(
-            &value[..],
-            value_of(i),
-            "expected value: {:?}, actual value: {:?}",
-            as_bytes(&value_of(i)),
-            as_bytes(&value[..])
-        );
-
-        let (back_key, back_value) = iter.next_back().unwrap().unwrap();
-        assert_eq!(
-            &back_key[..],
-            key_of(num_of_keys() - i - 1),
-            "expected key: {:?}, actual key: {:?}",
-            as_bytes(&key_of(num_of_keys() - i - 1)),
-            as_bytes(&back_key[..])
-        );
-        assert_eq!(
-            &back_value[..],
-            value_of(num_of_keys() - i - 1),
-            "expected value: {:?}, actual value: {:?}",
-            as_bytes(&value_of(num_of_keys() - i - 1)),
-            as_bytes(&back_value[..])
-        );
     }
 }
