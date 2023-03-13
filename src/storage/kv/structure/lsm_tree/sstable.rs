@@ -6,7 +6,7 @@ use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::{Result, Error};
 use super::block::{Block, BlockBuilder, BlockIterator, BlockIter};
-use super::iterators::StorageIterator;
+use super::iterators::{StorageIterator, StorageIter};
 use super::lsm_storage::BlockCache;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -311,6 +311,9 @@ impl StorageIterator for SsTableIterator {
     }
 }
 
+// ============================================================================================= //
+
+#[derive(Clone)]
 /// Rust-compatible iterator on a SsTable.
 pub struct SsTableIter {
     /// The block we're iterating across.
@@ -329,6 +332,22 @@ impl SsTableIter {
             back_block_iter: None,
         })
     }
+}
+
+impl StorageIter for SsTableIter {
+    fn front_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.front_block_iter.as_ref().map_or(
+            None, 
+            |(_, iter)| iter.front_entry()
+        )
+    }
+
+    fn back_entry(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.back_block_iter.as_ref().map_or(
+            None, 
+            |(_, iter)| iter.back_entry()
+        )
+    }
 
     fn is_valid(&self) -> bool {
         match (&self.front_block_iter, &self.back_block_iter) {
@@ -345,7 +364,16 @@ impl SsTableIter {
                     }
                 }
             },
-            _ => true,
+
+            (Some((front_idx, front_iter)), None) => {
+                0 <= *front_idx && *front_idx < self.table.num_of_blocks() as i32 && front_iter.is_valid()
+            },
+
+            (None, Some((back_idx, back_iter))) => {
+                0 <= *back_idx && *back_idx < self.table.num_of_blocks() as i32 && back_iter.is_valid()
+            },
+
+            (None, None) => { true }
         }
     }
 
@@ -354,29 +382,24 @@ impl SsTableIter {
             let block = self.table.read_block_cached(0)?;
             self.front_block_iter = Some((0, BlockIter::new(block)));
         }
-        if let Some((ref mut idx, ref mut iter)) = self.front_block_iter {
-            let next_entry = match iter.next().transpose()? {
-                Some(entry) => Some(entry),
-                None => {
-                    *idx += 1;
-                    if *idx < self.table.num_of_blocks() as i32 {
-                        let block = self.table.read_block_cached(*idx as usize)?;
-                        *iter = BlockIter::new(block);
-                        iter.next().transpose()?
-                    } else {
-                        None
-                    }
-                },
-            };
-            if let Some(_) = next_entry {
-                if !self.is_valid() {
-                    return Ok(None);
+        let (idx, iter) = self.front_block_iter.as_mut().expect("should have front iter");
+        let next_entry = match iter.next().transpose()? {
+            Some(entry) => Some(entry),
+            None => {
+                *idx += 1;
+                if *idx < self.table.num_of_blocks() as i32 {
+                    let block = self.table.read_block_cached(*idx as usize)?;
+                    *iter = BlockIter::new(block);
+                    iter.next().transpose()?
+                } else {
+                    None
                 }
-            }
-            return Ok(next_entry);
+            },
+        };
+        match self.is_valid() {
+            false => return Ok(None),
+            true => return Ok(next_entry),
         }
-        // Shouldn't reach here.
-        Ok(None)
     }
 
     fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
@@ -385,29 +408,24 @@ impl SsTableIter {
             let block = self.table.read_block_cached(block_idx)?;
             self.back_block_iter = Some((block_idx as i32, BlockIter::new(block)));
         }
-        if let Some((ref mut idx, ref mut iter)) = self.back_block_iter {
-            let next_entry = match iter.next_back().transpose()? {
-                Some(entry) => Some(entry),
-                None => {
-                    *idx -= 1;
-                    if *idx >= 0 {
-                        let block = self.table.read_block_cached(*idx as usize)?;
-                        *iter = BlockIter::new(block);
-                        iter.next_back().transpose()?
-                    } else {
-                        None
-                    }
-                },
-            };
-            if let Some(_) = next_entry {
-                if !self.is_valid() {
-                    return Ok(None);
+        let (idx, iter) = self.back_block_iter.as_mut().expect("should have back iter");
+        let next_entry = match iter.next_back().transpose()? {
+            Some(entry) => Some(entry),
+            None => {
+                *idx -= 1;
+                if *idx >= 0 {
+                    let block = self.table.read_block_cached(*idx as usize)?;
+                    *iter = BlockIter::new(block);
+                    iter.next_back().transpose()?
+                } else {
+                    None
                 }
-            }
-            return Ok(next_entry);
+            },
+        };
+        match self.is_valid() {
+            false => return Ok(None),
+            true => return Ok(next_entry),
         }
-        // Shouldn't reach here.
-        Ok(None)
     }
 }
 
@@ -425,7 +443,7 @@ impl DoubleEndedIterator for SsTableIter {
     }
 }
 
-
+// ============================================================================================= //
 
 #[cfg(test)]
 use tempfile::{tempdir, TempDir};
