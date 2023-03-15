@@ -7,8 +7,8 @@ use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::{Result, Error};
 use crate::storage::kv::structure::Range;
-use super::block::{Block, BlockBuilder, BlockIterator, BlockIter};
-use super::iterators::{StorageIterator, StorageIter};
+use super::block::{Block, BlockBuilder, BlockIter};
+use super::iterators::StorageIter;
 use super::lsm_storage::BlockCache;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -145,10 +145,17 @@ impl SsTable {
     }
 
     /// Find the block that may contain `key`.
-    pub fn find_block_idx(&self, key: &[u8]) -> usize {
+    pub fn front_find_block_idx(&self, key: &[u8]) -> i32 {
         self.block_metas
             .partition_point(|meta| meta.first_key <= key)
-            .saturating_sub(1)
+            as i32 - 1
+    }
+
+    /// Find the block that may contain `key`.
+    pub fn back_find_block_idx(&self, key: &[u8]) -> i32 {
+        self.block_metas
+            .partition_point(|meta| meta.first_key < key)
+            as i32
     }
 
     /// Get number of data blocks.
@@ -257,73 +264,92 @@ impl SsTableIter {
 
     pub fn create(table: Arc<SsTable>, range: Range) -> Result<Self> {
         let mut this = Self::new(table)?;
-        // TODO: not accurate
         match range.start_bound() {
-            Bound::Included(v) => { this.front_seek_to_key(&v)?; },
-            Bound::Excluded(v) => {
-                this.front_seek_to_key(&v)?;
-                this.try_next()?;
-            },
+            Bound::Included(v) => { this.front_seek_to_key(&v, true)?; },
+            Bound::Excluded(v) => { this.front_seek_to_key(&v, false)?; }
             Bound::Unbounded => { },
         };
         match range.end_bound() {
-            Bound::Included(v) => { this.back_seek_to_key(&v)?; },
-            Bound::Excluded(v) => {
-                this.back_seek_to_key(&v)?;
-                this.try_next_back()?;
-            },
+            Bound::Included(v) => { this.back_seek_to_key(&v, true)?; },
+            Bound::Excluded(v) => { this.back_seek_to_key(&v, false)?; },
             Bound::Unbounded => { },
         }
         Ok(this)
     }
 
     /// Create a new iterator and seek to the last key-value pair which < `key`.
-    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
+    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8], included: bool) -> Result<Self> {
         let mut this = SsTableIter::new(table)?;
-        this.front_seek_to_key(key)?;
+        this.front_seek_to_key(key, included)?;
         Ok(this)
     }
     
     /// Create a new iterator and seek to the last key-value pair which < `key`.
-    pub fn create_and_back_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
+    pub fn create_and_back_seek_to_key(table: Arc<SsTable>, key: &[u8], included: bool) -> Result<Self> {
         let mut this = SsTableIter::new(table)?;
-        this.back_seek_to_key(key)?;
+        this.back_seek_to_key(key, included)?;
         Ok(this)
     }
 
     /// Seek to the last key-value pair which < `key`.
-    pub fn front_seek_to_key(&mut self, key: &[u8]) -> Result<()> {
-        let mut block_idx = self.table.find_block_idx(key);
-        let mut block_iter = BlockIter::create_and_seek_to_key(
-            self.table.read_block_cached(block_idx)?, key
-        );
-        if !block_iter.is_valid() {
-            block_idx += 1;
-            if block_idx < self.table.num_of_blocks() {
-                block_iter = BlockIter::create_and_seek_to_key(
-                    self.table.read_block_cached(block_idx)?, key
+    pub fn front_seek_to_key(&mut self, key: &[u8], included: bool) -> Result<()> {
+        let mut block_idx = self.table.front_find_block_idx(key);
+        
+        match block_idx >= 0 {
+            true => {
+                let mut block_iter = BlockIter::create_and_seek_to_key(
+                    self.table.read_block_cached(block_idx as usize)?, key, included
                 );
+                if !block_iter.is_valid() {
+                    block_idx += 1;
+                    if block_idx < self.table.num_of_blocks() as i32 {
+                        block_iter = BlockIter::create_and_seek_to_key(
+                            self.table.read_block_cached(block_idx as usize)?, key, included
+                        );
+                    }
+                }
+                self.front_block_iter = Some((block_idx, block_iter));
+            },
+
+            false => {
+                block_idx += 1;
+                let block_iter = BlockIter::create_and_seek_to_key(
+                    self.table.read_block_cached(block_idx as usize)?, key, included
+                );
+                self.front_block_iter = Some((block_idx, block_iter));
             }
         }
-        self.front_block_iter = Some((block_idx as i32, block_iter));
         Ok(())
     }
 
-    /// Seek to the last key-value pair which < `key`.
-    pub fn back_seek_to_key(&mut self, key: &[u8]) -> Result<()> {
-        let mut block_idx = self.table.find_block_idx(key) as i32;
-        let mut block_iter = BlockIter::create_and_back_seek_to_key(
-                self.table.read_block_cached(block_idx as usize)?, key
-            );
-        if !block_iter.is_valid() {
-            block_idx -= 1;
-            if block_idx >= 0 {
-                block_iter = BlockIter::create_and_back_seek_to_key(
-                    self.table.read_block_cached(block_idx as usize)?, key
+    /// Seek to the last key-value pair which > `key`.
+    pub fn back_seek_to_key(&mut self, key: &[u8], included: bool) -> Result<()> {
+        let mut block_idx = self.table.back_find_block_idx(key);
+        
+        match block_idx < self.table.num_of_blocks() as i32 {
+            true => {
+                let mut block_iter = BlockIter::create_and_back_seek_to_key(
+                    self.table.read_block_cached(block_idx as usize)?, key, included
                 );
+                if !block_iter.is_valid() {
+                    block_idx -= 1;
+                    if block_idx >= 0 {
+                        block_iter = BlockIter::create_and_back_seek_to_key(
+                            self.table.read_block_cached(block_idx as usize)?, key, included
+                        );
+                    }
+                }
+                self.back_block_iter = Some((block_idx as i32, block_iter));
+            },
+
+            false => {
+                block_idx -= 1;
+                let block_iter = BlockIter::create_and_back_seek_to_key(
+                    self.table.read_block_cached(block_idx as usize)?, key, included
+                );
+                self.back_block_iter = Some((block_idx, block_iter));
             }
         }
-        self.back_block_iter = Some((block_idx as i32, block_iter));
         Ok(())
     }
 }
@@ -675,7 +701,7 @@ fn test_sst_iter_intersection_random() {
 fn test_sst_seek_key_iter() {
     let (_dir, sst) = generate_sst();
     let sst = Arc::new(sst);
-    let mut iter = SsTableIter::create_and_seek_to_key(sst, &key_of(0)).unwrap();
+    let mut iter = SsTableIter::create_and_seek_to_key(sst, &key_of(0), true).unwrap();
     for offset in 1..=5 {
         for i in 0..num_of_keys() {
             let (key, value) = iter.next().unwrap().unwrap();
@@ -693,124 +719,9 @@ fn test_sst_seek_key_iter() {
                 as_bytes(&value_of(i)),
                 as_bytes(&value)
             );
-            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes())
+            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes(), true)
                 .unwrap();
         }
-        iter.front_seek_to_key(b"k").unwrap();
-    }
-}
-
-
-
-// ============================================================================================= //
-
-
-
-/// An iterator over the contents of an SSTable.
-pub struct SsTableIterator {
-    table: Arc<SsTable>,
-    block_iter: BlockIterator,
-    block_idx: usize,
-}
-
-impl SsTableIterator {
-    /// Create a new iterator and seek to the first key-value pair.
-    pub fn create_and_seek_to_first(table: Arc<SsTable>) -> Result<Self> {
-        let block = table.read_block_cached(0)?;
-        Ok(Self {
-            table,
-            block_iter: BlockIterator::create_and_seek_to_first(block),
-            block_idx: 0
-        })
-    }
-
-    /// Seek to the first key-value pair.
-    pub fn seek_to_first(&mut self) -> Result<()> {
-        let block = self.table.read_block_cached(0)?;
-        self.block_iter = BlockIterator::create_and_seek_to_first(block);
-        self.block_idx = 0;
-        Ok(())
-    }
-
-    /// Create a new iterator and seek to the first key-value pair which >= `key`.
-    pub fn create_and_seek_to_key(table: Arc<SsTable>, key: &[u8]) -> Result<Self> {
-        let mut this = SsTableIterator::create_and_seek_to_first(table)?;
-        this.seek_to_key(key)?;
-        Ok(this)
-    }
-
-    /// Seek to the first key-value pair which >= `key`.
-    pub fn seek_to_key(&mut self, key: &[u8]) -> Result<()> {
-        let mut block_idx = self.table.find_block_idx(key);
-        let mut block_iter = 
-            BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
-        if !block_iter.is_valid() {
-            block_idx += 1;
-            if block_idx < self.table.num_of_blocks() {
-                block_iter = 
-                    BlockIterator::create_and_seek_to_key(self.table.read_block_cached(block_idx)?, key);
-            }
-        }
-        self.block_idx = block_idx;
-        self.block_iter = block_iter;
-        Ok(())
-    }
-}
-
-impl StorageIterator for SsTableIterator {
-    fn value(&self) -> &[u8] {
-        self.block_iter.value()
-    }
-
-    fn key(&self) -> &[u8] {
-        self.block_iter.key()
-    }
-
-    fn is_valid(&self) -> bool {
-        self.block_iter.is_valid()
-    }
-
-    fn next(&mut self) -> Result<()> {
-        self.block_iter.next();
-        if !self.block_iter.is_valid() {
-            self.block_idx += 1;
-            if self.block_idx < self.table.num_of_blocks() {
-                self.block_iter = BlockIterator::create_and_seek_to_first(
-                    self.table.read_block_cached(self.block_idx)?
-                );
-            }
-        }
-        Ok(())
-    }
-}
-
-// ============================================================================================= //
-
-#[test]
-fn test_sst_iterator() {
-    let (_dir, sst) = generate_sst();
-    let sst = Arc::new(sst);
-    let mut iter = SsTableIterator::create_and_seek_to_first(sst).unwrap();
-    for _ in 0..5 {
-        for i in 0..num_of_keys() {
-            let key = iter.key();
-            let value = iter.value();
-            assert_eq!(
-                key,
-                key_of(i),
-                "expected key: {:?}, actual key: {:?}",
-                as_bytes(&key_of(i)),
-                as_bytes(key)
-            );
-            assert_eq!(
-                value,
-                value_of(i),
-                "expected value: {:?}, actual value: {:?}",
-                as_bytes(&value_of(i)),
-                as_bytes(value)
-            );
-            iter.next().unwrap();
-        }
-        iter.seek_to_first().unwrap();
+        iter.front_seek_to_key(b"k", true).unwrap();
     }
 }
