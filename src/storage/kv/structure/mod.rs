@@ -17,7 +17,7 @@ pub trait ConcurrentStore: Display + Send + Sync {
     fn delete(&self, key: &[u8]) -> Result<()>;
 
     /// Iterates over an ordered range of key/value pairs.
-    fn scan(&self, range: Range) -> KvScan;
+    fn scan(&self, range: Range) -> Result<KvScan>;
 
     /// Flushes any buffered data to the underlying storage medium.
     fn flush(&self) -> Result<()>;
@@ -41,6 +41,7 @@ pub trait Store: Display + Send + Sync {
     fn flush(&mut self) -> Result<()>;
 }
 
+#[derive(Clone)]
 /// A scan range wrapper.
 pub struct Range {
     start: Bound<Vec<u8>>,
