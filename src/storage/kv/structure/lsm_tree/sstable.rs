@@ -1,10 +1,12 @@
 use std::fs::File;
+use std::ops::{RangeBounds, Bound};
 use std::path::Path;
 use std::sync::Arc;
 
 use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::{Result, Error};
+use crate::storage::kv::structure::Range;
 use super::block::{Block, BlockBuilder, BlockIterator, BlockIter};
 use super::iterators::{StorageIterator, StorageIter};
 use super::lsm_storage::BlockCache;
@@ -251,6 +253,28 @@ impl SsTableIter {
             front_block_iter: None,
             back_block_iter: None,
         })
+    }
+
+    pub fn create(table: Arc<SsTable>, range: Range) -> Result<Self> {
+        let mut this = Self::new(table)?;
+        // TODO: not accurate
+        match range.start_bound() {
+            Bound::Included(v) => { this.front_seek_to_key(&v)?; },
+            Bound::Excluded(v) => {
+                this.front_seek_to_key(&v)?;
+                this.try_next()?;
+            },
+            Bound::Unbounded => { },
+        };
+        match range.end_bound() {
+            Bound::Included(v) => { this.back_seek_to_key(&v)?; },
+            Bound::Excluded(v) => {
+                this.back_seek_to_key(&v)?;
+                this.try_next_back()?;
+            },
+            Bound::Unbounded => { },
+        }
+        Ok(this)
     }
 
     /// Create a new iterator and seek to the last key-value pair which < `key`.
