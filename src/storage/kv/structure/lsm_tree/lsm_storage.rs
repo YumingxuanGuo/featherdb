@@ -1,19 +1,16 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
-use std::ops::Bound;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use bytes::Bytes;
 use parking_lot::{RwLock, Mutex};
 
 use crate::error::Result;
+use super::super::{ConcurrentStore, Range, KvScan};
 use super::block::Block;
-use super::iterators::{MergeIterator, StorageIterator, TwoMergeIterator};
-use super::lsm_iterator::{FusedIterator, LsmIterator};
-use super::memtable::{MemTable, map_bound};
-use super::sstable::{SsTable, SsTableIterator, SsTableBuilder};
+use super::iterators::{MergeIter, TwoMergeIter};
+use super::lsm_iterator::LsmIter;
+use super::memtable::MemTable;
+use super::sstable::{SsTable, SsTableBuilder, SsTableIter};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -61,9 +58,20 @@ impl LsmStorage {
             block_cache: Arc::new(BlockCache::new(1 << 20)), // 4GB block cache
         })
     }
+}
 
-    /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+impl ConcurrentStore for LsmStorage {
+    fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
+        assert!(!key.is_empty(), "key cannot be empty");
+        assert!(!value.is_empty(), "value cannot be empty");
+
+        let session = self.inner.read();
+        session.memtable.set(key, value);
+
+        Ok(())
+    }
+
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let snapshot = {
             let session = self.inner.read();
             Arc::clone(&session)
@@ -87,48 +95,65 @@ impl LsmStorage {
             }
         }
 
-        // Search in sorted string tables.
-        let mut sstable_iters = Vec::new();
+        // Search in SsTables.
+        let mut sstable_iters = vec![];
         sstable_iters.reserve(snapshot.l0_sstables.len());
         for sstable in snapshot.l0_sstables.iter().rev() {
-            sstable_iters.push(Box::new(SsTableIterator::create_and_seek_to_key(
-                sstable.clone(), 
-                key,
-            )?));
+            sstable_iters.push(Box::new(
+                SsTableIter::create_and_seek_to_key(sstable.clone(), key, true)?
+            ));
         }
-        let merge_iter = MergeIterator::create(sstable_iters);
-        match merge_iter.is_valid() {
-            true => Ok(Some(Bytes::copy_from_slice(merge_iter.value()))),
-            false => Ok(None),
+        let mut merge_iter = MergeIter::create(sstable_iters)?;
+        match merge_iter.next() {
+            None => Ok(None),
+            Some(Err(e)) => Err(e),
+            Some(Ok((result_key, value))) => {
+                match key == result_key {
+                    true => Ok(Some(value)),
+                    false => Ok(None),
+                }
+            },
         }
     }
 
-    /// Put a key-value pair into the storage by writing into the current memtable.
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        assert!(!value.is_empty(), "value cannot be empty");
-        assert!(!key.is_empty(), "key cannot be empty");
-
-        let session = self.inner.read();
-        session.memtable.put(key, value);
-
-        Ok(())
-    }
-
-    /// Remove a key from the storage by writing an empty value.
-    pub fn delete(&self, key: &[u8]) -> Result<()> {
+    fn delete(&self, key: &[u8]) -> Result<()> {
         assert!(!key.is_empty(), "key cannot be empty");
         
         let session = self.inner.read();
-        session.memtable.put(key, b"");
+        session.memtable.set(key, vec![]);
 
         Ok(())
     }
 
-    /// Persist data to disk.
-    ///
-    /// In day 3: flush the current memtable to disk as L0 SST.
-    /// In day 6: call `fsync` on WAL.
-    pub fn sync(&self) -> Result<()> {
+    fn scan(&self, range: Range) -> Result<KvScan> {
+        let snapshot = {
+            let session = self.inner.read();
+            Arc::clone(&session)
+        };
+
+        let mut memtable_iters = vec![];
+        memtable_iters.reserve(snapshot.imm_memtables.len() + 1);
+        memtable_iters.push(Box::new(snapshot.memtable.scan(range.clone())));
+        for memtable in snapshot.imm_memtables.iter().rev() {
+            memtable_iters.push(Box::new(memtable.scan(range.clone())));
+        }
+        let memtable_merge_iter = MergeIter::create(memtable_iters)?;
+
+        let mut sstable_iters = vec![];
+        sstable_iters.reserve(snapshot.l0_sstables.len());
+        for sstable in snapshot.l0_sstables.iter().rev() {
+            sstable_iters.push(Box::new(SsTableIter::create(sstable.clone(), range.clone())?));
+        }
+        let sstable_merge_iter = MergeIter::create(sstable_iters)?;
+
+        let two_merge_iter = TwoMergeIter::create(
+            memtable_merge_iter, sstable_merge_iter
+        )?;
+
+        Ok(Box::new(LsmIter::create(two_merge_iter)))
+    }
+
+    fn flush(&self) -> Result<()> {
         let _flush_guard = self.flush_lock.lock();
 
         let memtable_to_flush;
@@ -182,50 +207,10 @@ impl LsmStorage {
 
         Ok(())
     }
+}
 
-    /// Create an iterator over a range of keys.
-    pub fn scan(
-        &self,
-        lower: Bound<&[u8]>,
-        upper: Bound<&[u8]>,
-    ) -> Result<FusedIterator<LsmIterator>> {
-        let snapshot = {
-            let session = self.inner.read();
-            Arc::clone(&session)
-        };
-
-        let mut memtable_iters = Vec::new();
-        memtable_iters.reserve(snapshot.imm_memtables.len() + 1);
-        memtable_iters.push(Box::new(snapshot.memtable.scan(lower, upper)));
-        for memtable in snapshot.imm_memtables.iter().rev() {
-            memtable_iters.push(Box::new(memtable.scan(lower, upper)));
-        }
-        let memtable_merge_iter = MergeIterator::create(memtable_iters);
-
-        let mut sstable_iters = Vec::new();
-        sstable_iters.reserve(snapshot.l0_sstables.len());
-        for sstable in snapshot.l0_sstables.iter().rev() {
-            let iter = match lower {
-                Bound::Included(key) => {
-                    SsTableIterator::create_and_seek_to_key(sstable.clone(), key)?
-                },
-                Bound::Excluded(key) => {
-                    let mut iter =
-                        SsTableIterator::create_and_seek_to_key(sstable.clone(), key)?;
-                    if iter.is_valid() && iter.key() == key {
-                        iter.next()?;
-                    }
-                    iter
-                },
-                Bound::Unbounded => SsTableIterator::create_and_seek_to_first(sstable.clone())?,
-            };
-            sstable_iters.push(Box::new(iter));
-        }
-        let sstable_merge_iter = MergeIterator::create(sstable_iters);
-
-        let two_merge_iter =
-            TwoMergeIterator::create(memtable_merge_iter, sstable_merge_iter)?;
-
-        Ok(FusedIterator::new(LsmIterator::new(two_merge_iter, map_bound(upper))?))
+impl Display for LsmStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LsmStorage")
     }
 }
