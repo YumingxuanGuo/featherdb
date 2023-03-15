@@ -136,21 +136,21 @@ impl BlockIter {
     }
 
     /// Creates a block iterator and seek to the last key that < `key`.
-    pub fn create_and_seek_to_key(block: Arc<Block>, key: &[u8]) -> Self {
+    pub fn create_and_seek_to_key(block: Arc<Block>, key: &[u8], included: bool) -> Self {
         let mut iter = BlockIter::new(block);
-        iter.front_seek_to_key(key);
+        iter.front_seek_to_key(key, included);
         iter
     }
 
     /// Creates a block iterator and seek to the last key that < `key`.
-    pub fn create_and_back_seek_to_key(block: Arc<Block>, key: &[u8]) -> Self {
+    pub fn create_and_back_seek_to_key(block: Arc<Block>, key: &[u8], included: bool) -> Self {
         let mut iter = BlockIter::new(block);
-        iter.back_seek_to_key(key);
+        iter.back_seek_to_key(key, included);
         iter
     }
 
-    /// Seek to the first key that < `key`.
-    pub fn front_seek_to_key(&mut self, key: &[u8]) {
+    /// Seek to the first key that is either < `key` (included) or <= `key` (excluded).
+    pub fn front_seek_to_key(&mut self, key: &[u8], included: bool) {
         let mut low = 0;
         let mut high = self.block.offsets.len();
         while low < high {
@@ -159,7 +159,7 @@ impl BlockIter {
                 match &mid_key[..].cmp(key) {
                     std::cmp::Ordering::Less => low = mid + 1,
                     std::cmp::Ordering::Equal => {
-                        self.front_index = Some(mid as i32 - 1);
+                        self.front_index = Some(mid as i32 - if included {1} else {0});
                         return;
                     }
                     std::cmp::Ordering::Greater => high = mid,
@@ -170,7 +170,7 @@ impl BlockIter {
     }
 
     /// Seek to the first key that > `key`.
-    pub fn back_seek_to_key(&mut self, key: &[u8]) {
+    pub fn back_seek_to_key(&mut self, key: &[u8], included: bool) {
         let mut low = 0;
         let mut high = self.block.offsets.len();
         while low < high {
@@ -179,7 +179,7 @@ impl BlockIter {
                 match &mid_key[..].cmp(key) {
                     std::cmp::Ordering::Less => low = mid + 1,
                     std::cmp::Ordering::Equal => {
-                        self.back_index = Some(mid as i32);
+                        self.back_index = Some(mid as i32 + if included {1} else {0});
                         return;
                     }
                     std::cmp::Ordering::Greater => high = mid,
@@ -469,7 +469,7 @@ fn test_block_iter_intersection_random() {
 #[test]
 fn test_block_seek_key_iter() {
     let block = Arc::new(generate_block());
-    let mut iter = BlockIter::create_and_seek_to_key(block, &key_of(0));
+    let mut iter = BlockIter::create_and_seek_to_key(block, &key_of(0), true);
     for offset in 1..=5 {
         for i in 0..num_of_keys() {
             let (key, value) = iter.next().unwrap().unwrap();
@@ -487,170 +487,8 @@ fn test_block_seek_key_iter() {
                 as_bytes(&value_of(i)),
                 as_bytes(&value)
             );
-            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes());
+            iter.front_seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes(), true);
         }
-        iter.front_seek_to_key(b"k");
-    }
-}
-
-
-
-// ============================================================================================= //
-
-
-
-/// Iterates on a block.
-pub struct BlockIterator {
-    block: Arc<Block>,
-    key: Vec<u8>,
-    value: Vec<u8>,
-    idx: usize,
-}
-
-impl BlockIterator {
-    fn new(block: Arc<Block>) -> Self {
-        Self {
-            block,
-            key: Vec::new(),
-            value: Vec::new(),
-            idx: 0,
-        }
-    }
-
-    /// Creates a block iterator and seek to the first entry.
-    pub fn create_and_seek_to_first(block: Arc<Block>) -> Self {
-        let mut iter = BlockIterator::new(block);
-        iter.seek_to_first();
-        iter
-    }
-
-    /// Creates a block iterator and seek to the first key that >= `key`.
-    pub fn create_and_seek_to_key(block: Arc<Block>, key: &[u8]) -> Self {
-        let mut iter = BlockIterator::new(block);
-        iter.seek_to_key(key);
-        iter
-    }
-
-    /// Returns the key of the current entry.
-    pub fn key(&self) -> &[u8] {
-        debug_assert!(!self.key.is_empty(), "invalid iterator");
-        &self.key
-    }
-
-    /// Returns the value of the current entry.
-    pub fn value(&self) -> &[u8] {
-        debug_assert!(!self.key.is_empty(), "invalid iterator");
-        &self.value
-    }
-
-    /// Returns true if the iterator is valid.
-    pub fn is_valid(&self) -> bool {
-        !self.key.is_empty()
-    }
-
-    fn seek_to_idx(&mut self, idx: usize) {
-        if idx >= self.block.offsets.len() {
-            self.key.clear();
-            self.value.clear();
-            return;
-        }
-        let offset = self.block.offsets[idx] as usize;
-        let mut entry = &self.block.data[offset..];
-        let key_len = entry.get_u16() as usize;
-        self.key = entry[..key_len].into();
-        entry.advance(key_len);
-        let value_len = entry.get_u16() as usize;
-        self.value = entry[..value_len].into();
-    }
-
-    /// Seeks to the first key in the block.
-    pub fn seek_to_first(&mut self) {
-        self.idx = 0;
-        self.seek_to_idx(self.idx);
-    }
-
-    /// Move to the next key in the block.
-    pub fn next(&mut self) {
-        self.idx += 1;
-        self.seek_to_idx(self.idx);
-    }
-
-    /// Seek to the first key that >= `key`.
-    pub fn seek_to_key(&mut self, key: &[u8]) {
-        let mut low = 0;
-        let mut high = self.block.offsets.len();
-        while low < high {
-            let mid = (low + high) / 2;
-            self.seek_to_idx(mid);
-            assert!(self.is_valid());
-            match self.key().cmp(key) {
-                std::cmp::Ordering::Less => low = mid + 1,
-                std::cmp::Ordering::Equal => {
-                    self.idx = low;
-                    return;
-                }
-                std::cmp::Ordering::Greater => high = mid,
-            }
-        }
-        self.seek_to_idx(low);
-        self.idx = low;
-    }
-}
-
-
-
-#[test]
-fn test_block_iterator() {
-    let block = Arc::new(generate_block());
-    let mut iter = BlockIterator::create_and_seek_to_first(block);
-    for _ in 0..5 {
-        for i in 0..num_of_keys() {
-            let key = iter.key();
-            let value = iter.value();
-            assert_eq!(
-                key,
-                key_of(i),
-                "expected key: {:?}, actual key: {:?}",
-                as_bytes(&key_of(i)),
-                as_bytes(key)
-            );
-            assert_eq!(
-                value,
-                value_of(i),
-                "expected value: {:?}, actual value: {:?}",
-                as_bytes(&value_of(i)),
-                as_bytes(value)
-            );
-            iter.next();
-        }
-        iter.seek_to_first();
-    }
-}
-
-#[test]
-fn test_block_seek_key() {
-    let block = Arc::new(generate_block());
-    let mut iter = BlockIterator::create_and_seek_to_key(block, &key_of(0));
-    for offset in 1..=5 {
-        for i in 0..num_of_keys() {
-            let key = iter.key();
-            let value = iter.value();
-            assert_eq!(
-                key,
-                key_of(i),
-                "expected key: {:?}, actual key: {:?}",
-                as_bytes(&key_of(i)),
-                as_bytes(key)
-            );
-            assert_eq!(
-                value,
-                value_of(i),
-                "expected value: {:?}, actual value: {:?}",
-                as_bytes(&value_of(i)),
-                as_bytes(value)
-            );
-            iter.seek_to_key(&format!("key_{:03}", i * 5 + offset).into_bytes());
-        }
-        iter.seek_to_key(b"k");
+        iter.front_seek_to_key(b"k", true);
     }
 }
