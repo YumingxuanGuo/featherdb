@@ -65,8 +65,12 @@ impl Clone for MemTableIter {
         let mut other = Self::create( 
             self.borrow_map().clone(), self.borrow_bound().clone()
         );
-        other.with_mut(|this| *this.front_entry = self.front_entry());
-        other.with_mut(|this| *this.back_entry = self.back_entry());
+        while other.front_entry() != self.front_entry() {
+            other.try_next().unwrap();
+        }
+        while other.back_entry() != self.back_entry() {
+            other.try_next_back().unwrap();
+        }
         other
     }
 
