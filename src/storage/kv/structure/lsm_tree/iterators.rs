@@ -136,9 +136,9 @@ impl<I: StorageIter> MergeIter<I> {
         for (idx, iter) in iters.into_iter().enumerate() {
             if iter.is_valid() {
                 let mut front_iter = iter.clone();
-                front_iter.next();
+                front_iter.try_next()?;
                 let mut back_iter = iter.clone();
-                back_iter.next_back();
+                back_iter.try_next_back()?;
                 front_heap.push(FrontWrapper{idx, iter: front_iter});
                 back_heap.push(BackWrapper{idx, iter: back_iter});
             }
