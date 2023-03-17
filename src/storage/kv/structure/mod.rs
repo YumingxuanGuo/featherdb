@@ -6,6 +6,23 @@ use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
 
+pub trait ConcurrentStore: Display + Send + Sync {
+    /// Sets a value for a key, replacing the existing value if any.
+    fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()>;
+
+    /// Gets a value for a key, if it exists.
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+
+    /// Deletes a key, doing nothing if it does not exist.
+    fn delete(&self, key: &[u8]) -> Result<()>;
+
+    /// Iterates over an ordered range of key/value pairs.
+    fn scan(&self, range: Range) -> Result<KvScan>;
+
+    /// Flushes any buffered data to the underlying storage medium.
+    fn flush(&self) -> Result<()>;
+}
+
 /// A key/value store.
 pub trait Store: Display + Send + Sync {
     /// Sets a value for a key, replacing the existing value if any.
@@ -24,6 +41,7 @@ pub trait Store: Display + Send + Sync {
     fn flush(&mut self) -> Result<()>;
 }
 
+#[derive(Clone)]
 /// A scan range wrapper.
 pub struct Range {
     start: Bound<Vec<u8>>,
