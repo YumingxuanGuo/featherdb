@@ -6,7 +6,7 @@ use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
 
-pub trait ConcurrentStore: Display + Send + Sync {
+pub trait KvStore: Display + Send + Sync {
     /// Sets a value for a key, replacing the existing value if any.
     fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()>;
 
@@ -21,24 +21,6 @@ pub trait ConcurrentStore: Display + Send + Sync {
 
     /// Flushes any buffered data to the underlying storage medium.
     fn flush(&self) -> Result<()>;
-}
-
-/// A key/value store.
-pub trait Store: Display + Send + Sync {
-    /// Sets a value for a key, replacing the existing value if any.
-    fn set(&mut self, key: &[u8], value: Vec<u8>) -> Result<()>;
-
-    /// Gets a value for a key, if it exists.
-    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
-
-    /// Deletes a key, doing nothing if it does not exist.
-    fn delete(&mut self, key: &[u8]) -> Result<()>;
-
-    /// Iterates over an ordered range of key/value pairs.
-    fn scan(&self, range: Range) -> KvScan;
-
-    /// Flushes any buffered data to the underlying storage medium.
-    fn flush(&mut self) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -88,7 +70,7 @@ impl RangeBounds<Vec<u8>> for Range {
 pub type KvScan = Box<dyn DoubleEndedIterator<Item = Result<(Vec<u8>, Vec<u8>)>> + Send>;
 
 #[cfg(test)]
-trait TestSuite<S: Store> {
+trait TestSuite<S: KvStore> {
     fn setup() -> Result<S>;
 
     fn test() -> Result<()> {
@@ -101,7 +83,7 @@ trait TestSuite<S: Store> {
     }
 
     fn test_get() -> Result<()> {
-        let mut s = Self::setup()?;
+        let s = Self::setup()?;
         s.set(b"a", vec![0x01])?;
         assert_eq!(Some(vec![0x01]), s.get(b"a")?);
         assert_eq!(None, s.get(b"b")?);
@@ -109,7 +91,7 @@ trait TestSuite<S: Store> {
     }
 
     fn test_delete() -> Result<()> {
-        let mut s = Self::setup()?;
+        let s = Self::setup()?;
         s.set(b"a", vec![0x01])?;
         assert_eq!(Some(vec![0x01]), s.get(b"a")?);
         s.delete(b"a")?;
@@ -120,7 +102,7 @@ trait TestSuite<S: Store> {
 
     fn test_random() -> Result<()> {
         use rand::Rng;
-        let mut s = Self::setup()?;
+        let s = Self::setup()?;
         let mut rng: rand::rngs::StdRng = rand::SeedableRng::seed_from_u64(397_427_893);
 
         // Create a bunch of random items and insert them
@@ -138,22 +120,22 @@ trait TestSuite<S: Store> {
         }
         let mut expect = items.clone();
         expect.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(expect, s.scan(Range::from(..)).collect::<Result<Vec<_>>>()?);
+        assert_eq!(expect, s.scan(Range::from(..))?.collect::<Result<Vec<_>>>()?);
         expect.reverse();
-        assert_eq!(expect, s.scan(Range::from(..)).rev().collect::<Result<Vec<_>>>()?);
+        assert_eq!(expect, s.scan(Range::from(..))?.rev().collect::<Result<Vec<_>>>()?);
 
         // Remove the items
         for (key, _) in items {
             s.delete(&key)?;
             assert_eq!(None, s.get(&key)?);
         }
-        assert!(s.scan(Range::from(..)).collect::<Result<Vec<_>>>()?.is_empty());
+        assert!(s.scan(Range::from(..))?.collect::<Result<Vec<_>>>()?.is_empty());
 
         Ok(())
     }
 
     fn test_scan() -> Result<()> {
-        let mut s = Self::setup()?;
+        let s = Self::setup()?;
         s.set(b"a", vec![0x01])?;
         s.set(b"b", vec![0x02])?;
         s.set(b"ba", vec![0x02, 0x01])?;
@@ -167,7 +149,7 @@ trait TestSuite<S: Store> {
                 (b"ba".to_vec(), vec![0x02, 0x01]),
                 (b"bb".to_vec(), vec![0x02, 0x02]),
             ],
-            s.scan(Range::from(b"b".to_vec()..b"bz".to_vec())).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(b"b".to_vec()..b"bz".to_vec()))?.collect::<Result<Vec<_>>>()?
         );
         assert_eq!(
             vec![
@@ -175,13 +157,13 @@ trait TestSuite<S: Store> {
                 (b"ba".to_vec(), vec![0x02, 0x01]),
                 (b"b".to_vec(), vec![0x02]),
             ],
-            s.scan(Range::from(b"b".to_vec()..b"bz".to_vec())).rev().collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(b"b".to_vec()..b"bz".to_vec()))?.rev().collect::<Result<Vec<_>>>()?
         );
 
         // Inclusive/exclusive ranges
         assert_eq!(
             vec![(b"b".to_vec(), vec![0x02]), (b"ba".to_vec(), vec![0x02, 0x01]),],
-            s.scan(Range::from(b"b".to_vec()..b"bb".to_vec())).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(b"b".to_vec()..b"bb".to_vec()))?.collect::<Result<Vec<_>>>()?
         );
         assert_eq!(
             vec![
@@ -189,17 +171,17 @@ trait TestSuite<S: Store> {
                 (b"ba".to_vec(), vec![0x02, 0x01]),
                 (b"bb".to_vec(), vec![0x02, 0x02]),
             ],
-            s.scan(Range::from(b"b".to_vec()..=b"bb".to_vec())).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(b"b".to_vec()..=b"bb".to_vec()))?.collect::<Result<Vec<_>>>()?
         );
 
         // Open ranges
         assert_eq!(
             vec![(b"bb".to_vec(), vec![0x02, 0x02]), (b"c".to_vec(), vec![0x03]),],
-            s.scan(Range::from(b"bb".to_vec()..)).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(b"bb".to_vec()..))?.collect::<Result<Vec<_>>>()?
         );
         assert_eq!(
             vec![(b"a".to_vec(), vec![0x01]), (b"b".to_vec(), vec![0x02]),],
-            s.scan(Range::from(..=b"b".to_vec())).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(..=b"b".to_vec()))?.collect::<Result<Vec<_>>>()?
         );
 
         // Full range
@@ -211,13 +193,13 @@ trait TestSuite<S: Store> {
                 (b"bb".to_vec(), vec![0x02, 0x02]),
                 (b"c".to_vec(), vec![0x03]),
             ],
-            s.scan(Range::from(..)).collect::<Result<Vec<_>>>()?
+            s.scan(Range::from(..))?.collect::<Result<Vec<_>>>()?
         );
         Ok(())
     }
 
     fn test_set() -> Result<()> {
-        let mut s = Self::setup()?;
+        let s = Self::setup()?;
         s.set(b"a", vec![0x01])?;
         assert_eq!(Some(vec![0x01]), s.get(b"a")?);
         s.set(b"a", vec![0x02])?;

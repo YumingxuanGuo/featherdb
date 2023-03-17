@@ -4,7 +4,7 @@ use bytes::Bytes;
 use tempfile::tempdir;
 
 #[cfg(test)]
-use crate::storage::kv::ConcurrentStore;
+use crate::storage::kv::KvStore;
 #[cfg(test)]
 use crate::storage::kv::KvScan;
 #[cfg(test)]

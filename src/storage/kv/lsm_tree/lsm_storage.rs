@@ -5,7 +5,7 @@ use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};
 
 use crate::error::Result;
-use super::super::{ConcurrentStore, Range, KvScan};
+use super::super::{KvStore, Range, KvScan};
 use super::block::Block;
 use super::iterators::{MergeIter, TwoMergeIter};
 use super::lsm_iterator::LsmIter;
@@ -60,7 +60,7 @@ impl LsmStorage {
     }
 }
 
-impl ConcurrentStore for LsmStorage {
+impl KvStore for LsmStorage {
     fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
         assert!(!key.is_empty(), "key cannot be empty");
         assert!(!value.is_empty(), "value cannot be empty");
