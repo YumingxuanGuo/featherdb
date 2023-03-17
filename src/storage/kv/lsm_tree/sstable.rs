@@ -6,7 +6,7 @@ use std::sync::Arc;
 use bytes::{Buf, Bytes, BufMut};
 
 use crate::error::{Result, Error};
-use crate::storage::kv::structure::Range;
+use crate::storage::kv::Range;
 use super::block::{Block, BlockBuilder, BlockIter};
 use super::iterators::StorageIter;
 use super::lsm_storage::BlockCache;

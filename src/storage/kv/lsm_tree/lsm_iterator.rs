@@ -60,7 +60,7 @@ use super::memtable::MemTable;
 #[cfg(test)]
 use super::sstable::{SsTable, SsTableBuilder};
 #[cfg(test)]
-use crate::storage::kv::structure::Range;
+use crate::storage::kv::Range;
 
 #[cfg(test)]
 fn as_bytes(x: &[u8]) -> Bytes {
