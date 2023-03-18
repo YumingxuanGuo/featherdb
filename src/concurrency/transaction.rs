@@ -1,12 +1,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+use std::iter::Peekable;
+use std::ops::{RangeBounds, Bound};
 use std::{sync::Arc, borrow::Cow};
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::storage::kv::{KvStore, Range};
+use crate::storage::kv::{KvStore, Range, KvScan};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -157,6 +159,46 @@ impl Transaction {
         }
         Ok(None)
     }
+
+    /// Scans a key range.
+    pub fn scan(&self, range: impl RangeBounds<Vec<u8>>) -> Result<KvScan> {
+        let start = match range.start_bound() {
+            Bound::Excluded(k) => Bound::Excluded(MvccKey::Record(k.into(), std::u64::MAX).encode()),
+            Bound::Included(k) => Bound::Included(MvccKey::Record(k.into(), 0).encode()),
+            Bound::Unbounded => Bound::Included(MvccKey::Record(vec![].into(), 0).encode()),
+        };
+        let end = match range.end_bound() {
+            Bound::Excluded(k) => Bound::Excluded(MvccKey::Record(k.into(), 0).encode()),
+            Bound::Included(k) => Bound::Included(MvccKey::Record(k.into(), std::u64::MAX).encode()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+        let scan = self.store.scan(Range::from((start,end)))?;
+        Ok(Box::new(MvccScan::new(scan, self.snapshot.clone())))
+    }
+
+    /// Scans keys with a given prefix.
+    pub fn scan_prefix(&self, prefix: &[u8]) -> Result<KvScan> {
+        if prefix.is_empty() {
+            return Err(Error::Internal("Scan prefix cannot be empty".into()));
+        }
+        let start = prefix.to_vec();
+        let mut end = start.clone();
+        for i in (0..end.len()).rev() {
+            match end[i] {
+                // If all 0xff we could in principle use Range::Unbounded, but it won't happen
+                0xff if i == 0 => return Err(Error::Internal("Invalid prefix scan range".into())),
+                0xff => {
+                    end[i] = 0x00;
+                    continue;
+                }
+                v => {
+                    end[i] = v + 1;
+                    break;
+                }
+            }
+        }
+        self.scan(start..end)
+    }
 }
 
 /// An MVCC transaction mode.
@@ -290,4 +332,33 @@ fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
 /// Deserializes MVCC metadata.
 fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
     Ok(bincode::deserialize(bytes)?)
+}
+
+/// A key range scan.
+pub struct MvccScan {
+    /// The augmented KV store iterator, with key (decoded) and value. Note that we don't retain
+    /// the decoded version, so there will be multiple keys (for each version). We want the last.
+    scan: Peekable<KvScan>,
+    /// Keeps track of next_back() seen key, whose previous versions should be ignored.
+    next_back_seen: Option<Vec<u8>>,
+}
+
+impl MvccScan {
+    fn new(mut scan: KvScan, snapshot: Snapshot) -> Self {
+        todo!()
+    }
+}
+
+impl Iterator for MvccScan {
+    type Item = Result<(Vec<u8>, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
+impl DoubleEndedIterator for MvccScan {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
 }
