@@ -1,4 +1,5 @@
 pub mod mvcc;
+pub mod tests;
 pub mod transaction;
 
 pub use mvcc::MVCC;
