@@ -3,10 +3,10 @@
 use std::{sync::Arc, borrow::Cow};
 use std::collections::HashSet;
 
-use serde_derive::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::storage::kv::KvStore;
+use crate::storage::kv::{KvStore, Range};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -23,7 +23,53 @@ pub struct Transaction {
 impl Transaction {
     /// Begins a new transaction in the given mode.
     pub(super) fn begin(store: Arc<Box<dyn KvStore>>, mode: Mode) -> Result<Self> {
-        todo!()
+        let id = match store.get(&MvccKey::TxnNext.encode())? {
+            Some(ref v) => deserialize(v)?,
+            None => 1,
+        };
+        store.set(&MvccKey::TxnNext.encode(), serialize(&(id + 1))?)?;
+        store.set(&MvccKey::TxnActive(id).encode(), serialize(&mode)?)?;
+
+        // We always take a new snapshot, even for snapshot transactions, because all transactions
+        // increment the transaction ID and we need to properly record currently active transactions
+        // for any future snapshot transactions looking at this one.
+        let mut snapshot = Snapshot::take(store.clone(), id)?;
+        if let Mode::Snapshot { version } = &mode {
+            snapshot = Snapshot::restore(store.clone(), *version)?
+        }
+
+        Ok(Self { store, id, mode, snapshot })
+    }
+
+    /// Resumes an active transaction with the given ID. Errors if the transaction is not active.
+    pub(super) fn resume(store: Arc<Box<dyn KvStore>>, id: u64) -> Result<Self> {
+        let mode = match store.get(&MvccKey::TxnActive(id).encode())? {
+            Some(v) => deserialize(&v)?,
+            None => return Err(Error::Value(format!("No active transaction {}", id))),
+        };
+        // If the txn's mode is `Snapshot`, then restore that particular one.
+        // Otherwise restore the one with the txn id.
+        let snapshot = match &mode {
+            Mode::Snapshot { version } => Snapshot::restore(store.clone(), *version)?,
+            _ => Snapshot::restore(store.clone(), id)?,
+        };
+        Ok(Self { store, id, mode, snapshot })
+    }
+
+    /// Returns the transaction ID.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Returns the transaction mode.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Commits the transaction, by removing the txn from the active set.
+    pub fn commit(self) -> Result<()> {
+        self.store.delete(&MvccKey::TxnActive(self.id).encode())?;
+        self.store.flush()
     }
 }
 
@@ -60,6 +106,33 @@ struct Snapshot {
     /// The set of transaction IDs that were active at the start of the transactions,
     /// and thus should be invisible to the snapshot.
     invisible: HashSet<u64>,
+}
+
+impl Snapshot {
+    /// Takes a new snapshot, persisting it as `Key::TxnSnapshot(version)`.
+    fn take(store: Arc<Box<dyn KvStore>>, version: u64) -> Result<Self> {
+        let mut invisible = HashSet::new();
+        let mut scan = store.scan(Range::from(
+            MvccKey::TxnActive(0).encode()..MvccKey::TxnActive(version).encode()
+        ))?;
+        while let Some((key, _)) = scan.next().transpose()? {
+            match MvccKey::decode(&key)? {
+                MvccKey::TxnActive(id) => invisible.insert(id),
+                k => return Err(Error::Internal(format!("Expected TxnActive, got {:?}", k))),
+            };
+        }
+        std::mem::drop(scan);
+        store.set(&MvccKey::TxnSnapshot(version).encode(), serialize(&invisible)?)?;
+        Ok(Self { version, invisible })
+    }
+
+    /// Restores an existing snapshot from `Key::TxnSnapshot(version)`, or errors if not found.
+    fn restore(store: Arc<Box<dyn KvStore>>, version: u64) -> Result<Self> {
+        match store.get(&MvccKey::TxnSnapshot(version).encode())? {
+            Some(ref v) => Ok(Self { version, invisible: deserialize(v)? }),
+            None => Err(Error::Value(format!("Snapshot not found for version {}", version))),
+        }
+    }
 }
 
 /// MVCC keys. The encoding preserves the grouping and ordering of keys. 
@@ -116,4 +189,14 @@ impl<'a> MvccKey<'a> {
         }
         Ok(key)
     }
+}
+
+/// Serializes MVCC metadata.
+fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(value)?)
+}
+
+/// Deserializes MVCC metadata.
+fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
+    Ok(bincode::deserialize(bytes)?)
 }
