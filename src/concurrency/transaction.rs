@@ -47,6 +47,7 @@ impl Transaction {
             Some(v) => deserialize(&v)?,
             None => return Err(Error::Value(format!("No active transaction {}", id))),
         };
+
         // If the txn's mode is `Snapshot`, then restore that particular one.
         // Otherwise restore the one with the txn id.
         let snapshot = match &mode {
@@ -70,6 +71,91 @@ impl Transaction {
     pub fn commit(self) -> Result<()> {
         self.store.delete(&MvccKey::TxnActive(self.id).encode())?;
         self.store.flush()
+    }
+
+    /// Rolls back the transaction, by removing all updated entries.
+    pub fn rollback(self) -> Result<()> {
+        if self.mode.allows_write() {
+            let mut keys_to_rollback = vec![];
+            let mut scan = self.store.scan(Range::from(
+                MvccKey::TxnUpdate(self.id, vec![].into()).encode()
+                    ..MvccKey::TxnUpdate(self.id + 1, vec![].into()).encode()
+            ))?;
+
+            // Delete all `TxnUpdate`s and all `Record`s.
+            while let Some((key, _)) = scan.next().transpose()? {
+                match MvccKey::decode(&key)? {
+                    MvccKey::TxnUpdate(_, updated_key) => keys_to_rollback.push(updated_key.into_owned()),
+                    k => return Err(Error::Internal(format!("Expected TxnUpdate, got {:?}", k))),
+                }
+                keys_to_rollback.push(key);
+            }
+            std::mem::drop(scan);
+            for key in keys_to_rollback.into_iter() {
+                self.store.delete(&key)?;
+            }
+        }
+        self.store.delete(&MvccKey::TxnActive(self.id).encode())
+    }
+
+    /// Writes a value for a key. None is used for deletion.
+    fn write(&self, key: &[u8], value: Option<Vec<u8>>) -> Result<()> {
+        if !self.mode.allows_write() {
+            return Err(Error::ReadOnly);
+        }
+
+        // Checks if the key has any uncommitted changes by scanning the invisible versions.
+        // If there are, returns `Error::Serialization` and has the client retry the request.
+        let min = self.snapshot.invisible.iter().min().cloned().unwrap_or(self.id + 1);
+        let mut scan = self.store.scan(Range::from(
+            MvccKey::Record(key.into(), min).encode()
+                ..MvccKey::Record(key.into(), std::u64::MAX).encode()
+        ))?.rev();
+        while let Some((k, _)) = scan.next().transpose()? {
+            match MvccKey::decode(&k) ?{
+                MvccKey::Record(_, version) => {
+                    if !self.snapshot.can_access(version) {
+                        return Err(Error::Serialization);
+                    }
+                }
+                k => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", k))),
+            };
+        }
+
+        // Writes the key and the update record.
+        let key = MvccKey::Record(key.into(), self.id).encode();
+        let update = MvccKey::TxnUpdate(self.id, (&key).into()).encode();
+        self.store.set(&update, vec![])?;
+        self.store.set(&key, serialize(&value)?)
+    }
+
+    /// Sets a key.
+    pub fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
+        self.write(key, Some(value))
+    }
+
+    /// Deletes a key.
+    pub fn delete(&self, key: &[u8]) -> Result<()> {
+        self.write(key, None)
+    }
+
+    /// Fetches a key.
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // Fetches the most recent version of the key.
+        let mut scan = self.store.scan(Range::from(
+            MvccKey::Record(key.into(), 0).encode()..=MvccKey::Record(key.into(), self.id).encode(),
+        ))?.rev();
+        while let Some((k, v)) = scan.next().transpose()? {
+            match MvccKey::decode(&k)? {
+                MvccKey::Record(_, version) => {
+                    if self.snapshot.can_access(version) {
+                        return deserialize(&v);
+                    }
+                }
+                k => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", k))),
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -132,6 +218,11 @@ impl Snapshot {
             Some(ref v) => Ok(Self { version, invisible: deserialize(v)? }),
             None => Err(Error::Value(format!("Snapshot not found for version {}", version))),
         }
+    }
+
+    /// Checks whether the given version is visible in this snapshot.
+    fn can_access(&self, version: u64) -> bool {
+        version <= self.version && self.invisible.get(&version).is_none()
     }
 }
 
