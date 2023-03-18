@@ -127,7 +127,7 @@ impl Transaction {
         // Writes the key and the update record.
         let key = MvccKey::Record(key.into(), self.id).encode();
         let update = MvccKey::TxnUpdate(self.id, (&key).into()).encode();
-        self.store.set(&update, vec![0x00])?;   // A non-empty place-holder value.
+        self.store.set(&update, vec![0x00])?;   // A non-empty placeholder value.
         self.store.set(&key, serialize(&value)?)
     }
 
