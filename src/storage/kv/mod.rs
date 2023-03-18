@@ -1,10 +1,13 @@
-pub mod std_b_plus_tree;
 pub mod lsm_tree;
+pub mod std_b_plus_tree;
 
 use std::fmt::Display;
 use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
+
+pub use lsm_tree::lsm_storage::LsmStorage;
+pub use std_b_plus_tree::StdBPlusTree;
 
 pub trait KvStore: Display + Send + Sync {
     /// Sets a value for a key, replacing the existing value if any.
