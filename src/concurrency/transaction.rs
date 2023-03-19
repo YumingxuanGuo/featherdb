@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
 use std::iter::Peekable;
 use std::ops::{RangeBounds, Bound};
 use std::{sync::Arc, borrow::Cow};
@@ -271,7 +269,7 @@ impl Snapshot {
 /// MVCC keys. The encoding preserves the grouping and ordering of keys. 
 /// Uses a Cow since we want to take borrows when encoding and return owned when decoding.
 #[derive(Debug)]
-enum MvccKey<'a> {
+pub(super) enum MvccKey<'a> {
     /// The next available txn ID. Used when starting new txns.
     TxnNext,
     /// Active txn markers, containing the mode. Used to detect concurrent txns, and to resume.
@@ -288,7 +286,7 @@ enum MvccKey<'a> {
 
 impl<'a> MvccKey<'a> {
     /// Encodes a key into a byte vector.
-    fn encode(self) -> Vec<u8> {
+    pub(super) fn encode(self) -> Vec<u8> {
         use crate::encoding::*;
         match self {
             Self::TxnNext => vec![0x01],
@@ -345,7 +343,57 @@ pub struct MvccScan {
 
 impl MvccScan {
     fn new(mut scan: KvScan, snapshot: Snapshot) -> Self {
-        todo!()
+        // Augment the underlying scan to decode the key and filter invisible versions. We don't
+        // return the version, since we don't need it, but beware that all versions of the key
+        // will still be returned - we usually only need the last, which is what the next() and
+        // next_back() methods need to handle. We also don't decode the value, since we only need
+        // to decode the last version.
+        scan = Box::new(scan.filter_map(move |r| {
+            r.and_then(|(k, v)| match MvccKey::decode(&k)? {
+                MvccKey::Record(_, version) if !snapshot.can_access(version) => Ok(None),
+                MvccKey::Record(key, _) => Ok(Some((key.into_owned(), v))),
+                k => Err(Error::Internal(format!("Expected Record, got {:?}", k))),
+            }).transpose()
+        }));
+        Self { scan: scan.peekable(), next_back_seen: None }
+    }
+
+    // next() with error handling.
+    fn try_next(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        while let Some((key, value)) = self.scan.next().transpose()? {
+            // Only return the item if it is the last version of the key.
+            if match self.scan.peek() {
+                Some(Ok((peek_key, _))) if *peek_key != key => true,
+                Some(Ok(_)) => false,
+                Some(Err(e)) => return Err(e.clone()),
+                None => true,
+            } {
+                // Only return non-deleted items.
+                if let Some(value) = deserialize(&value)? {
+                    return Ok(Some((key, value)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// next_back() with error handling.
+    fn try_next_back(&mut self) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+        while let Some((key, value)) = self.scan.next_back().transpose()? {
+            // Only return the last version of the key (so skip if seen).
+            if match &self.next_back_seen {
+                Some(seen_key) if *seen_key != key => true,
+                Some(_) => false,
+                None => true,
+            } {
+                self.next_back_seen = Some(key.clone());
+                // Only return non-deleted items.
+                if let Some(value) = deserialize(&value)? {
+                    return Ok(Some((key, value)));
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -353,12 +401,12 @@ impl Iterator for MvccScan {
     type Item = Result<(Vec<u8>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        self.try_next().transpose()
     }
 }
 
 impl DoubleEndedIterator for MvccScan {
     fn next_back(&mut self) -> Option<Self::Item> {
-        todo!()
+        self.try_next_back().transpose()
     }
 }
