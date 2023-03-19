@@ -316,3 +316,355 @@ fn test_txn_get_serial() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_txn_scan() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+    
+    let txn = mvcc.begin()?;
+
+    txn.set(b"a", vec![0x01])?;
+
+    txn.delete(b"b")?;
+
+    txn.set(b"c", vec![0x01])?;
+    txn.set(b"c", vec![0x02])?;
+    txn.delete(b"c")?;
+    txn.set(b"c", vec![0x03])?;
+
+    txn.set(b"d", vec![0x01])?;
+    txn.set(b"d", vec![0x02])?;
+    txn.set(b"d", vec![0x03])?;
+    txn.set(b"d", vec![0x04])?;
+    txn.delete(b"d")?;
+
+    txn.set(b"e", vec![0x01])?;
+    txn.set(b"e", vec![0x02])?;
+    txn.set(b"e", vec![0x03])?;
+    txn.delete(b"e")?;
+    txn.set(b"e", vec![0x04])?;
+    txn.set(b"e", vec![0x05])?;
+    txn.commit()?;
+
+    // Forward scan
+    let txn = mvcc.begin()?;
+    assert_eq!(
+        vec![
+            (b"a".to_vec(), vec![0x01]),
+            (b"c".to_vec(), vec![0x03]),
+            (b"e".to_vec(), vec![0x05]),
+        ],
+        txn.scan(..)?.collect::<Result<Vec<_>>>()?
+    );
+
+    // Reverse scan
+    assert_eq!(
+        vec![
+            (b"e".to_vec(), vec![0x05]),
+            (b"c".to_vec(), vec![0x03]),
+            (b"a".to_vec(), vec![0x01]),
+        ],
+        txn.scan(..)?.rev().collect::<Result<Vec<_>>>()?
+    );
+
+    // Alternate forward/backward scan
+    let mut scan = txn.scan(..)?;
+    assert_eq!(Some((b"a".to_vec(), vec![0x01])), scan.next().transpose()?);
+    assert_eq!(Some((b"e".to_vec(), vec![0x05])), scan.next_back().transpose()?);
+    assert_eq!(Some((b"c".to_vec(), vec![0x03])), scan.next_back().transpose()?);
+    assert_eq!(None, scan.next().transpose()?);
+    std::mem::drop(scan);
+
+    txn.commit()?;
+    Ok(())
+}
+
+#[test]
+fn test_txn_scan_key_version_overlap() -> Result<()> {
+    // The idea here is that with a naive key/version concatenation
+    // we get overlapping entries that mess up scans. For example:
+    //
+    // 00|00 00 00 00 00 00 00 01
+    // 00 00 00 00 00 00 00 00 02|00 00 00 00 00 00 00 02
+    // 00|00 00 00 00 00 00 00 03
+    //
+    // The key encoding should be resistant to this.
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(&[0], vec![0])?; // v0
+    txn.set(&[0], vec![1])?; // v1
+    txn.set(&[0, 0, 0, 0, 0, 0, 0, 0, 2], vec![2])?; // v2
+    txn.set(&[0], vec![3])?; // v3
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    assert_eq!(
+        vec![(vec![0].to_vec(), vec![3]), (vec![0, 0, 0, 0, 0, 0, 0, 0, 2].to_vec(), vec![2]),],
+        txn.scan(..)?.collect::<Result<Vec<_>>>()?
+    );
+    Ok(())
+}
+
+#[test]
+fn test_txn_scan_prefix() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+    
+    let txn = mvcc.begin()?;
+
+    txn.set(b"a", vec![0x01])?;
+    txn.set(b"az", vec![0x01, 0x1a])?;
+    txn.set(b"b", vec![0x02])?;
+    txn.set(b"ba", vec![0x02, 0x01])?;
+    txn.set(b"bb", vec![0x02, 0x02])?;
+    txn.set(b"bc", vec![0x02, 0x03])?;
+    txn.set(b"c", vec![0x03])?;
+    txn.commit()?;
+
+    // Forward scan
+    let txn = mvcc.begin()?;
+    assert_eq!(
+        vec![
+            (b"b".to_vec(), vec![0x02]),
+            (b"ba".to_vec(), vec![0x02, 0x01]),
+            (b"bb".to_vec(), vec![0x02, 0x02]),
+            (b"bc".to_vec(), vec![0x02, 0x03]),
+        ],
+        txn.scan_prefix(b"b")?.collect::<Result<Vec<_>>>()?
+    );
+
+    // Reverse scan
+    assert_eq!(
+        vec![
+            (b"bc".to_vec(), vec![0x02, 0x03]),
+            (b"bb".to_vec(), vec![0x02, 0x02]),
+            (b"ba".to_vec(), vec![0x02, 0x01]),
+            (b"b".to_vec(), vec![0x02]),
+        ],
+        txn.scan_prefix(b"b")?.rev().collect::<Result<Vec<_>>>()?
+    );
+
+    // Alternate forward/backward scan
+    let mut scan = txn.scan_prefix(b"b")?;
+    assert_eq!(Some((b"b".to_vec(), vec![0x02])), scan.next().transpose()?);
+    assert_eq!(Some((b"bc".to_vec(), vec![0x02, 0x03])), scan.next_back().transpose()?);
+    assert_eq!(Some((b"bb".to_vec(), vec![0x02, 0x02])), scan.next_back().transpose()?);
+    assert_eq!(Some((b"ba".to_vec(), vec![0x02, 0x01])), scan.next().transpose()?);
+    assert_eq!(None, scan.next_back().transpose()?);
+    std::mem::drop(scan);
+
+    txn.commit()?;
+    Ok(())
+}
+
+#[test]
+fn test_txn_set_conflict() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+
+    t2.set(b"key", vec![0x02])?;
+    assert_eq!(Err(Error::Serialization), t1.set(b"key", vec![0x01]));
+    assert_eq!(Err(Error::Serialization), t3.set(b"key", vec![0x03]));
+    t2.commit()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_set_conflict_committed() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+
+    t2.set(b"key", vec![0x02])?;
+    t2.commit()?;
+    assert_eq!(Err(Error::Serialization), t1.set(b"key", vec![0x01]));
+    assert_eq!(Err(Error::Serialization), t3.set(b"key", vec![0x03]));
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_set_rollback() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"key", vec![0x00])?;
+    txn.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+
+    t2.set(b"key", vec![0x02])?;
+    t2.rollback()?;
+    assert_eq!(Some(vec![0x00]), t1.get(b"key")?);
+    t1.commit()?;
+    t3.set(b"key", vec![0x03])?;
+    t3.commit()?;
+
+    Ok(())
+}
+
+#[test]
+// A dirty write is when t2 overwrites an uncommitted value written by t1.
+fn test_txn_anomaly_dirty_write() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    t1.set(b"key", b"t1".to_vec())?;
+    assert_eq!(t2.set(b"key", b"t2".to_vec()), Err(Error::Serialization));
+
+    Ok(())
+}
+
+#[test]
+// A dirty read is when t2 can read an uncommitted value set by t1.
+fn test_txn_anomaly_dirty_read() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    t1.set(b"key", b"t1".to_vec())?;
+    assert_eq!(None, t2.get(b"key")?);
+
+    Ok(())
+}
+
+#[test]
+// A lost update is when t1 and t2 both read a value and update it, where t2's update replaces t1.
+fn test_txn_anomaly_lost_update() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t0 = mvcc.begin()?;
+    t0.set(b"key", b"t0".to_vec())?;
+    t0.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    t1.get(b"key")?;
+    t2.get(b"key")?;
+
+    t1.set(b"key", b"t1".to_vec())?;
+    assert_eq!(t2.set(b"key", b"t2".to_vec()), Err(Error::Serialization));
+
+    Ok(())
+}
+
+#[test]
+// A fuzzy (or unrepeatable) read is when t2 sees a value change after t1 updates it.
+fn test_txn_anomaly_fuzzy_read() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t0 = mvcc.begin()?;
+    t0.set(b"key", b"t0".to_vec())?;
+    t0.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    assert_eq!(Some(b"t0".to_vec()), t2.get(b"key")?);
+    t1.set(b"key", b"t1".to_vec())?;
+    t1.commit()?;
+    assert_eq!(Some(b"t0".to_vec()), t2.get(b"key")?);
+
+    Ok(())
+}
+
+#[test]
+// Read skew is when t1 reads a and b, but t2 modifies b in between the reads.
+fn test_txn_anomaly_read_skew() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t0 = mvcc.begin()?;
+    t0.set(b"a", b"t0".to_vec())?;
+    t0.set(b"b", b"t0".to_vec())?;
+    t0.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    assert_eq!(Some(b"t0".to_vec()), t1.get(b"a")?);
+    t2.set(b"a", b"t2".to_vec())?;
+    t2.set(b"b", b"t2".to_vec())?;
+    t2.commit()?;
+    assert_eq!(Some(b"t0".to_vec()), t1.get(b"b")?);
+
+    Ok(())
+}
+
+#[test]
+// A phantom read is when t1 reads entries matching some predicate, but a modification by
+// t2 changes the entries that match the predicate such that a later read by t1 returns them.
+fn test_txn_anomaly_phantom_read() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t0 = mvcc.begin()?;
+    t0.set(b"a", b"true".to_vec())?;
+    t0.set(b"b", b"false".to_vec())?;
+    t0.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    assert_eq!(Some(b"true".to_vec()), t1.get(b"a")?);
+    assert_eq!(Some(b"false".to_vec()), t1.get(b"b")?);
+
+    t2.set(b"b", b"true".to_vec())?;
+    t2.commit()?;
+
+    assert_eq!(Some(b"true".to_vec()), t1.get(b"a")?);
+    assert_eq!(Some(b"false".to_vec()), t1.get(b"b")?);
+
+    Ok(())
+}
+
+/* FIXME To avoid write skew we need to implement serializable snapshot isolation.
+#[test]
+// Write skew is when t1 reads b and writes it to a while t2 reads a and writes it to b.¨
+fn test_txn_anomaly_write_skew() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t0 = mvcc.begin()?;
+    t0.set(b"a", b"1".to_vec())?;
+    t0.set(b"b", b"2".to_vec())?;
+    t0.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+
+    assert_eq!(Some(b"1".to_vec()), t1.get(b"a")?);
+    assert_eq!(Some(b"2".to_vec()), t2.get(b"b")?);
+
+    // Some of the following operations should error
+    t1.set(b"a", b"2".to_vec())?;
+    t2.set(b"b", b"1".to_vec())?;
+
+    t1.commit()?;
+    t2.commit()?;
+
+    Ok(())
+} */
+
+#[test]
+fn test_metadata() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    mvcc.set_metadata(b"foo", b"bar".to_vec())?;
+    assert_eq!(Some(b"bar".to_vec()), mvcc.get_metadata(b"foo")?);
+
+    assert_eq!(None, mvcc.get_metadata(b"x")?);
+
+    mvcc.set_metadata(b"foo", b"baz".to_vec())?;
+    assert_eq!(Some(b"baz".to_vec()), mvcc.get_metadata(b"foo")?);
+    Ok(())
+}
