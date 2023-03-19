@@ -178,3 +178,141 @@ fn test_resume() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_txn_delete_conflict() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"key", vec![0x00])?;
+    txn.commit()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+
+    t2.delete(b"key")?;
+    assert_eq!(Err(Error::Serialization), t1.delete(b"key"));
+    assert_eq!(Err(Error::Serialization), t3.delete(b"key"));
+    t2.commit()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_delete_idempotent() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.delete(b"key")?;
+    txn.commit()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    assert_eq!(None, txn.get(b"a")?);
+    txn.set(b"a", vec![0x01])?;
+    assert_eq!(Some(vec![0x01]), txn.get(b"a")?);
+    txn.set(b"a", vec![0x02])?;
+    assert_eq!(Some(vec![0x02]), txn.get(b"a")?);
+    txn.commit()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get_deleted() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"a", vec![0x01])?;
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    txn.delete(b"a")?;
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    assert_eq!(None, txn.get(b"a")?);
+    txn.commit()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get_hides_newer() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+
+    t1.set(b"a", vec![0x01])?;
+    t1.commit()?;
+    t3.set(b"c", vec![0x03])?;
+    t3.commit()?;
+
+    assert_eq!(None, t2.get(b"a")?);
+    assert_eq!(None, t2.get(b"c")?);
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get_hides_uncommitted() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let t1 = mvcc.begin()?;
+    t1.set(b"a", vec![0x01])?;
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+    t3.set(b"c", vec![0x03])?;
+
+    assert_eq!(None, t2.get(b"a")?);
+    assert_eq!(None, t2.get(b"c")?);
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get_read_only_historical() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"a", vec![0x01])?;
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"b", vec![0x02])?;
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"c", vec![0x03])?;
+    txn.commit()?;
+
+    let tr = mvcc.begin_with_mode(Mode::Snapshot { version: 2 })?;
+    assert_eq!(Some(vec![0x01]), tr.get(b"a")?);
+    assert_eq!(Some(vec![0x02]), tr.get(b"b")?);
+    assert_eq!(None, tr.get(b"c")?);
+
+    Ok(())
+}
+
+#[test]
+fn test_txn_get_serial() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    let txn = mvcc.begin()?;
+    txn.set(b"a", vec![0x01])?;
+    txn.commit()?;
+
+    let txn = mvcc.begin()?;
+    assert_eq!(Some(vec![0x01]), txn.get(b"a")?);
+
+    Ok(())
+}
