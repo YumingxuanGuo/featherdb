@@ -34,4 +34,9 @@ impl MVCC {
     pub fn begin_with_mode(&self, mode: Mode) -> Result<Transaction> {
         Transaction::begin(Arc::clone(&self.store), mode)
     }
+
+    /// Resumes a transaction with the given ID.
+    pub fn resume(&self, id: u64) -> Result<Transaction> {
+        Transaction::resume(self.store.clone(), id)
+    }
 }

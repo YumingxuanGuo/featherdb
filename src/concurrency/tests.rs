@@ -108,3 +108,73 @@ fn test_begin_with_mode_snapshot() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_resume() -> Result<()> {
+    let (mvcc, _dir) = setup()?;
+
+    // We first write a set of values that should be visible.
+    let t1 = mvcc.begin()?;
+    t1.set(b"a", b"t1".to_vec())?;
+    t1.set(b"b", b"t1".to_vec())?;
+    t1.commit()?;
+
+    // We then start three transactions, of which we will resume t3.
+    // We commit t2 and t4's changes, which should not be visible,
+    // and write a change for t3 which should be visible.
+    let t2 = mvcc.begin()?;
+    let t3 = mvcc.begin()?;
+    let t4 = mvcc.begin()?;
+
+    t2.set(b"a", b"t2".to_vec())?;
+    t3.set(b"b", b"t3".to_vec())?;
+    t4.set(b"c", b"t4".to_vec())?;
+
+    t2.commit()?;
+    t4.commit()?;
+
+    // We now resume t3, who should see it's own changes but none of the others'.
+    let id = t3.id();
+    std::mem::drop(t3);
+    let tr = mvcc.resume(id)?;
+    assert_eq!(3, tr.id());
+    assert_eq!(Mode::ReadWrite, tr.mode());
+
+    assert_eq!(Some(b"t1".to_vec()), tr.get(b"a")?);
+    assert_eq!(Some(b"t3".to_vec()), tr.get(b"b")?);
+    assert_eq!(None, tr.get(b"c")?);
+
+    // A separate transaction should not see t3's changes, but should see the others.
+    let t = mvcc.begin()?;
+    assert_eq!(Some(b"t2".to_vec()), t.get(b"a")?);
+    assert_eq!(Some(b"t1".to_vec()), t.get(b"b")?);
+    assert_eq!(Some(b"t4".to_vec()), t.get(b"c")?);
+    t.rollback()?;
+
+    // Once tr commits, a separate transaction should see t3's changes.
+    tr.commit()?;
+
+    let t = mvcc.begin()?;
+    assert_eq!(Some(b"t2".to_vec()), t.get(b"a")?);
+    assert_eq!(Some(b"t3".to_vec()), t.get(b"b")?);
+    assert_eq!(Some(b"t4".to_vec()), t.get(b"c")?);
+    t.rollback()?;
+
+    // It should also be possible to start a snapshot transaction and resume it.
+    let ts = mvcc.begin_with_mode(Mode::Snapshot { version: 1 })?;
+    assert_eq!(7, ts.id());
+    assert_eq!(Some(b"t1".to_vec()), ts.get(b"a")?);
+
+    let id = ts.id();
+    std::mem::drop(ts);
+    let ts = mvcc.resume(id)?;
+    assert_eq!(7, ts.id());
+    assert_eq!(Mode::Snapshot { version: 1 }, ts.mode());
+    assert_eq!(Some(b"t1".to_vec()), ts.get(b"a")?);
+    ts.commit()?;
+
+    // Resuming an inactive transaction should error.
+    assert_eq!(mvcc.resume(7).err(), Some(Error::Value("No active transaction 7".into())));
+
+    Ok(())
+}
