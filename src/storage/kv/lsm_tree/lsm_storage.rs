@@ -104,12 +104,14 @@ impl KvStore for LsmStorage {
             ));
         }
         let mut merge_iter = MergeIter::create(sstable_iters)?;
-        match merge_iter.next() {
+        match merge_iter.next().transpose()? {
             None => Ok(None),
-            Some(Err(e)) => Err(e),
-            Some(Ok((result_key, value))) => {
+            Some((result_key, value)) => {
                 match key == result_key {
-                    true => Ok(Some(value)),
+                    true => match value.is_empty() {
+                        true => return Ok(None),
+                        false => return Ok(Some(value)),
+                    },
                     false => Ok(None),
                 }
             },
