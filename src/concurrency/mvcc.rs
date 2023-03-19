@@ -1,10 +1,6 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::sync::Arc;
 
 use crate::{storage::kv::KvStore, error::Result};
-
 use super::{Mode, Transaction};
 
 /// An MVCC-based transactional key-value store.
@@ -38,5 +34,17 @@ impl MVCC {
     /// Resumes a transaction with the given ID.
     pub fn resume(&self, id: u64) -> Result<Transaction> {
         Transaction::resume(self.store.clone(), id)
+    }
+
+    /// Fetches an unversioned metadata value
+    pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        use super::transaction::MvccKey;
+        self.store.get(&MvccKey::Metadata(key.into()).encode())
+    }
+
+    /// Sets an unversioned metadata value
+    pub fn set_metadata(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
+        use super::transaction::MvccKey;
+        self.store.set(&MvccKey::Metadata(key.into()).encode(), value)
     }
 }
