@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use parking_lot::RwLock;
+
 use crate::{storage::kv::KvStore, error::Result};
 use super::{Mode, Transaction};
 
 /// An MVCC-based transactional key-value store.
 pub struct MVCC {
     /// The underlying KV store. It is protected by a mutex so it can be shared between txns.
-    store: Arc<Box<dyn KvStore>>,
+    store: Arc<RwLock<Box<dyn KvStore>>>,
 }
 
 impl Clone for MVCC {
@@ -18,7 +20,7 @@ impl Clone for MVCC {
 impl MVCC {
     /// Creates a new MVCC key-value store with the given key-value store for storage.
     pub fn new(store: Box<dyn KvStore>) -> Self {
-        Self { store: Arc::new(store) }
+        Self { store: Arc::new(RwLock::new(store)) }
     }
 
     /// Begins a new transaction in default read-write mode.
@@ -28,7 +30,7 @@ impl MVCC {
 
     /// Begins a new transaction in the given mode.
     pub fn begin_with_mode(&self, mode: Mode) -> Result<Transaction> {
-        Transaction::begin(Arc::clone(&self.store), mode)
+        Transaction::begin(self.store.clone(), mode)
     }
 
     /// Resumes a transaction with the given ID.
@@ -39,12 +41,14 @@ impl MVCC {
     /// Fetches an unversioned metadata value
     pub fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         use super::transaction::MvccKey;
-        self.store.get(&MvccKey::Metadata(key.into()).encode())
+        let session = self.store.read();
+        session.get(&MvccKey::Metadata(key.into()).encode())
     }
 
     /// Sets an unversioned metadata value
     pub fn set_metadata(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
         use super::transaction::MvccKey;
-        self.store.set(&MvccKey::Metadata(key.into()).encode(), value)
+        let session = self.store.write();
+        session.set(&MvccKey::Metadata(key.into()).encode(), value)
     }
 }

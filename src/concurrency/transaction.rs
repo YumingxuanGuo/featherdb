@@ -3,6 +3,7 @@ use std::ops::{RangeBounds, Bound};
 use std::{sync::Arc, borrow::Cow};
 use std::collections::HashSet;
 
+use parking_lot::{RwLock, RwLockWriteGuard, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -11,7 +12,7 @@ use crate::storage::kv::{KvStore, Range, KvScan};
 /// An MVCC transaction.
 pub struct Transaction {
     /// The underlying store for the transaction. Shared between transactions using a mutex.
-    store: Arc<Box<dyn KvStore>>,
+    store: Arc<RwLock<Box<dyn KvStore>>>,
     /// The unique transaction ID.
     id: u64,
     /// The transaction mode.
@@ -22,28 +23,33 @@ pub struct Transaction {
 
 impl Transaction {
     /// Begins a new transaction in the given mode.
-    pub(super) fn begin(store: Arc<Box<dyn KvStore>>, mode: Mode) -> Result<Self> {
-        let id = match store.get(&MvccKey::TxnNext.encode())? {
+    pub(super) fn begin(store: Arc<RwLock<Box<dyn KvStore>>>, mode: Mode) -> Result<Self> {
+        let session = store.write();
+
+        let id = match session.get(&MvccKey::TxnNext.encode())? {
             Some(ref v) => deserialize(v)?,
             None => 1,
         };
-        store.set(&MvccKey::TxnNext.encode(), serialize(&(id + 1))?)?;
-        store.set(&MvccKey::TxnActive(id).encode(), serialize(&mode)?)?;
+        session.set(&MvccKey::TxnNext.encode(), serialize(&(id + 1))?)?;
+        session.set(&MvccKey::TxnActive(id).encode(), serialize(&mode)?)?;
 
         // We always take a new snapshot, even for snapshot transactions, because all transactions
         // increment the transaction ID and we need to properly record currently active transactions
         // for any future snapshot transactions looking at this one.
-        let mut snapshot = Snapshot::take(store.clone(), id)?;
+        let mut snapshot = Snapshot::take(&session, id)?;
+        std::mem::drop(session);
         if let Mode::Snapshot { version } = &mode {
-            snapshot = Snapshot::restore(store.clone(), *version)?
+            snapshot = Snapshot::restore(&store.read(), *version)?
         }
 
         Ok(Self { store, id, mode, snapshot })
     }
 
     /// Resumes an active transaction with the given ID. Errors if the transaction is not active.
-    pub(super) fn resume(store: Arc<Box<dyn KvStore>>, id: u64) -> Result<Self> {
-        let mode = match store.get(&MvccKey::TxnActive(id).encode())? {
+    pub(super) fn resume(store: Arc<RwLock<Box<dyn KvStore>>>, id: u64) -> Result<Self> {
+        let session = store.read();
+
+        let mode = match session.get(&MvccKey::TxnActive(id).encode())? {
             Some(v) => deserialize(&v)?,
             None => return Err(Error::Value(format!("No active transaction {}", id))),
         };
@@ -51,9 +57,11 @@ impl Transaction {
         // If the txn's mode is `Snapshot`, then restore that particular one.
         // Otherwise restore the one with the txn id.
         let snapshot = match &mode {
-            Mode::Snapshot { version } => Snapshot::restore(store.clone(), *version)?,
-            _ => Snapshot::restore(store.clone(), id)?,
+            Mode::Snapshot { version } => Snapshot::restore(&session, *version)?,
+            _ => Snapshot::restore(&session, id)?,
         };
+
+        std::mem::drop(session);
         Ok(Self { store, id, mode, snapshot })
     }
 
@@ -69,15 +77,18 @@ impl Transaction {
 
     /// Commits the transaction, by removing the txn from the active set.
     pub fn commit(self) -> Result<()> {
-        self.store.delete(&MvccKey::TxnActive(self.id).encode())?;
-        self.store.flush()
+        let session = self.store.write();
+        session.delete(&MvccKey::TxnActive(self.id).encode())?;
+        session.flush()
     }
 
     /// Rolls back the transaction, by removing all updated entries.
     pub fn rollback(self) -> Result<()> {
+        let session = self.store.write();
+
         if self.mode.allows_write() {
             let mut keys_to_rollback = vec![];
-            let mut scan = self.store.scan(Range::from(
+            let mut scan = session.scan(Range::from(
                 MvccKey::TxnUpdate(self.id, vec![].into()).encode()
                     ..MvccKey::TxnUpdate(self.id + 1, vec![].into()).encode()
             ))?;
@@ -92,10 +103,10 @@ impl Transaction {
             }
             std::mem::drop(scan);
             for key in keys_to_rollback.into_iter() {
-                self.store.delete(&key)?;
+                session.delete(&key)?;
             }
         }
-        self.store.delete(&MvccKey::TxnActive(self.id).encode())
+        session.delete(&MvccKey::TxnActive(self.id).encode())
     }
 
     /// Writes a value for a key. None is used for deletion.
@@ -103,11 +114,12 @@ impl Transaction {
         if !self.mode.allows_write() {
             return Err(Error::ReadOnly);
         }
+        let session = self.store.write();
 
         // Checks if the key has any uncommitted changes by scanning the invisible versions.
         // If there are, returns `Error::Serialization` and has the client retry the request.
         let min = self.snapshot.invisible.iter().min().cloned().unwrap_or(self.id + 1);
-        let mut scan = self.store.scan(Range::from(
+        let mut scan = session.scan(Range::from(
             MvccKey::Record(key.into(), min).encode()
                 ..MvccKey::Record(key.into(), std::u64::MAX).encode()
         ))?.rev();
@@ -121,12 +133,13 @@ impl Transaction {
                 k => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", k))),
             };
         }
+        std::mem::drop(scan);
 
         // Writes the key and the update record.
         let key = MvccKey::Record(key.into(), self.id).encode();
         let update = MvccKey::TxnUpdate(self.id, (&key).into()).encode();
-        self.store.set(&update, vec![0x00])?;   // A non-empty placeholder value.
-        self.store.set(&key, serialize(&value)?)
+        session.set(&update, vec![0x00])?;   // A non-empty placeholder value.
+        session.set(&key, serialize(&value)?)
     }
 
     /// Sets a key.
@@ -141,8 +154,10 @@ impl Transaction {
 
     /// Fetches a key.
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let session = self.store.read();
+
         // Fetches the most recent version of the key.
-        let mut scan = self.store.scan(Range::from(
+        let mut scan = session.scan(Range::from(
             MvccKey::Record(key.into(), 0).encode()..=MvccKey::Record(key.into(), self.id).encode(),
         ))?.rev();
         while let Some((k, v)) = scan.next().transpose()? {
@@ -170,7 +185,7 @@ impl Transaction {
             Bound::Included(k) => Bound::Included(MvccKey::Record(k.into(), std::u64::MAX).encode()),
             Bound::Unbounded => Bound::Unbounded,
         };
-        let scan = self.store.scan(Range::from((start,end)))?;
+        let scan = self.store.read().scan(Range::from((start,end)))?;
         Ok(Box::new(MvccScan::new(scan, self.snapshot.clone())))
     }
 
@@ -236,9 +251,9 @@ struct Snapshot {
 
 impl Snapshot {
     /// Takes a new snapshot, persisting it as `Key::TxnSnapshot(version)`.
-    fn take(store: Arc<Box<dyn KvStore>>, version: u64) -> Result<Self> {
+    fn take(session: &RwLockWriteGuard<Box<dyn KvStore>>, version: u64) -> Result<Self> {
         let mut invisible = HashSet::new();
-        let mut scan = store.scan(Range::from(
+        let mut scan = session.scan(Range::from(
             MvccKey::TxnActive(0).encode()..MvccKey::TxnActive(version).encode()
         ))?;
         while let Some((key, _)) = scan.next().transpose()? {
@@ -248,13 +263,13 @@ impl Snapshot {
             };
         }
         std::mem::drop(scan);
-        store.set(&MvccKey::TxnSnapshot(version).encode(), serialize(&invisible)?)?;
+        session.set(&MvccKey::TxnSnapshot(version).encode(), serialize(&invisible)?)?;
         Ok(Self { version, invisible })
     }
 
     /// Restores an existing snapshot from `Key::TxnSnapshot(version)`, or errors if not found.
-    fn restore(store: Arc<Box<dyn KvStore>>, version: u64) -> Result<Self> {
-        match store.get(&MvccKey::TxnSnapshot(version).encode())? {
+    fn restore(session: &RwLockReadGuard<Box<dyn KvStore>>, version: u64) -> Result<Self> {
+        match session.get(&MvccKey::TxnSnapshot(version).encode())? {
             Some(ref v) => Ok(Self { version, invisible: deserialize(v)? }),
             None => Err(Error::Value(format!("Snapshot not found for version {}", version))),
         }
