@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::iter::Peekable;
 use std::ops::{RangeBounds, Bound};
 use std::{sync::Arc, borrow::Cow};
@@ -8,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::storage::kv::{KvStore, Range, KvScan};
+use super::mvcc::LockManager;
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -19,11 +22,21 @@ pub struct Transaction {
     mode: Mode,
     /// The snapshot that the transaction is running in.
     snapshot: Snapshot,
+    /// The lock manager for serializable snapshot isolation (SSI).
+    lock_manager: Option<Arc<LockManager>>,
+    /// The flag for an rw-depenedncy from another txn to this txn.
+    in_conflict: bool,
+    /// The flag for an rw-depenedncy from this txn to another txn.
+    out_conflict: bool,
 }
 
 impl Transaction {
     /// Begins a new transaction in the given mode.
-    pub(super) fn begin(store: Arc<RwLock<Box<dyn KvStore>>>, mode: Mode) -> Result<Self> {
+    pub(super) fn begin(
+        store: Arc<RwLock<Box<dyn KvStore>>>, 
+        mode: Mode, 
+        lock_manager: Option<Arc<LockManager>>
+    ) -> Result<Self> {
         let session = store.write();
 
         let id = match session.get(&MvccKey::TxnNext.encode())? {
@@ -42,11 +55,15 @@ impl Transaction {
             snapshot = Snapshot::restore(&store.read(), *version)?
         }
 
-        Ok(Self { store, id, mode, snapshot })
+        Ok(Self { store, id, mode, snapshot, lock_manager, in_conflict: false, out_conflict: false })
     }
 
     /// Resumes an active transaction with the given ID. Errors if the transaction is not active.
-    pub(super) fn resume(store: Arc<RwLock<Box<dyn KvStore>>>, id: u64) -> Result<Self> {
+    pub(super) fn resume(
+        store: Arc<RwLock<Box<dyn KvStore>>>, 
+        id: u64, 
+        lock_manager: Option<Arc<LockManager>>
+    ) -> Result<Self> {
         let session = store.read();
 
         let mode = match session.get(&MvccKey::TxnActive(id).encode())? {
@@ -62,7 +79,7 @@ impl Transaction {
         };
 
         std::mem::drop(session);
-        Ok(Self { store, id, mode, snapshot })
+        Ok(Self { store, id, mode, snapshot, lock_manager, in_conflict: false, out_conflict: false })
     }
 
     /// Returns the transaction ID.
