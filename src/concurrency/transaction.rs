@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::iter::Peekable;
 use std::ops::{RangeBounds, Bound};
 use std::{sync::Arc, borrow::Cow};
@@ -9,8 +7,8 @@ use parking_lot::{RwLock, RwLockWriteGuard, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::storage::kv::{KvStore, Range, KvScan};
 use super::mvcc::LockManager;
+use crate::storage::kv::{KvStore, Range, KvScan};
 
 /// An MVCC transaction.
 pub struct Transaction {
@@ -24,10 +22,6 @@ pub struct Transaction {
     snapshot: Snapshot,
     /// The lock manager for serializable snapshot isolation (SSI).
     lock_manager: Option<Arc<LockManager>>,
-    /// The flag for an rw-depenedncy from another txn to this txn.
-    in_conflict: bool,
-    /// The flag for an rw-depenedncy from this txn to another txn.
-    out_conflict: bool,
 }
 
 impl Transaction {
@@ -55,7 +49,12 @@ impl Transaction {
             snapshot = Snapshot::restore(&store.read(), *version)?
         }
 
-        Ok(Self { store, id, mode, snapshot, lock_manager, in_conflict: false, out_conflict: false })
+        // Initializes the transaction status for SSI on beginning.
+        if let Some(ref lock_manager) = lock_manager {
+            lock_manager.init_txn(id);
+        }
+
+        Ok(Self { store, id, mode, snapshot, lock_manager })
     }
 
     /// Resumes an active transaction with the given ID. Errors if the transaction is not active.
@@ -79,7 +78,13 @@ impl Transaction {
         };
 
         std::mem::drop(session);
-        Ok(Self { store, id, mode, snapshot, lock_manager, in_conflict: false, out_conflict: false })
+
+        // Initializes the transaction status for SSI on resuming.
+        if let Some(ref lock_manager) = lock_manager {
+            lock_manager.init_txn(id);
+        }
+        
+        Ok(Self { store, id, mode, snapshot, lock_manager })
     }
 
     /// Returns the transaction ID.
@@ -95,6 +100,18 @@ impl Transaction {
     /// Commits the transaction, by removing the txn from the active set.
     pub fn commit(self) -> Result<()> {
         let session = self.store.write();
+
+        // Checks if this transaction has double RW-dependencies.
+        // Returns `Error::Serialization` if positive; otherwise, updates the lock manager.
+        if let (Some(lock_manager), true) = (&self.lock_manager, self.mode.allows_write()) {
+            lock_manager.check_abort(self.id)?;
+            let commit_timestamp = match session.get(&MvccKey::TxnNext.encode())? {
+                Some(ref v) => deserialize(v)?,
+                None => 1,
+            };
+            lock_manager.commit_txn(self.id, commit_timestamp)?;
+        }
+
         session.delete(&MvccKey::TxnActive(self.id).encode())?;
         session.flush()
     }
@@ -104,13 +121,18 @@ impl Transaction {
         let session = self.store.write();
 
         if self.mode.allows_write() {
+            // Updates the lock manager by removing all related info.
+            if let Some(lock_manager) = &self.lock_manager {
+                lock_manager.rollback_txn(self.id);
+            }
+
             let mut keys_to_rollback = vec![];
             let mut scan = session.scan(Range::from(
                 MvccKey::TxnUpdate(self.id, vec![].into()).encode()
                     ..MvccKey::TxnUpdate(self.id + 1, vec![].into()).encode()
             ))?;
 
-            // Delete all `TxnUpdate`s and all `Record`s.
+            // Deletes all `TxnUpdate`s and all `Record`s.
             while let Some((key, _)) = scan.next().transpose()? {
                 match MvccKey::decode(&key)? {
                     MvccKey::TxnUpdate(_, updated_key) => keys_to_rollback.push(updated_key.into_owned()),
@@ -132,6 +154,12 @@ impl Transaction {
             return Err(Error::ReadOnly);
         }
         let session = self.store.write();
+
+        // Acquires the WRITE lock and records RW-dependencies with other readers.
+        if let (Some(lock_manager), true) = (&self.lock_manager, self.mode.allows_write()) {
+            lock_manager.acquire_write_lock(key.to_vec(), self.id);
+            lock_manager.check_read_locks(key.to_vec(), self.id)?;
+        }
 
         // Checks if the key has any uncommitted changes by scanning the invisible versions.
         // If there are, returns `Error::Serialization` and has the client retry the request.
@@ -173,21 +201,45 @@ impl Transaction {
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let session = self.store.read();
 
+        // Acquires the SIREAD lock and records RW-dependencies with other writers.
+        if let (Some(lock_manager), true) = (&self.lock_manager, self.mode.allows_write()) {
+            lock_manager.acquire_read_lock(key.to_vec(), self.id);
+            lock_manager.check_write_locks(key.to_vec(), self.id)?;
+        }
+
         // Fetches the most recent version of the key.
+        let mut value: Result<Option<Vec<u8>>> = Ok(None);
         let mut scan = session.scan(Range::from(
-            MvccKey::Record(key.into(), 0).encode()..=MvccKey::Record(key.into(), self.id).encode(),
+            MvccKey::Record(key.into(), 0).encode()..=
+            MvccKey::Record(key.into(), self.id).encode(),
         ))?.rev();
         while let Some((k, v)) = scan.next().transpose()? {
             match MvccKey::decode(&k)? {
                 MvccKey::Record(_, version) => {
                     if self.snapshot.can_access(version) {
-                        return deserialize(&v);
+                        value = deserialize(&v);
+                        break;
                     }
                 }
                 k => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", k))),
             }
         }
-        Ok(None)
+
+        // Records RW-dependencies with the creators of newer-versioned entries.
+        if let (Some(lock_manager), true) = (&self.lock_manager, self.mode.allows_write()) {
+            let mut scan = session.scan(Range::from(
+                MvccKey::Record(key.into(), self.id + 1).encode()..=
+                MvccKey::Record(key.into(), std::u64::MAX).encode(),
+            ))?;
+            while let Some((k, _)) = scan.next().transpose()? {
+                match MvccKey::decode(&k)? {
+                    MvccKey::Record(_, version) => lock_manager.abort_or_record_conflict(version, self.id)?,
+                    k => return Err(Error::Internal(format!("Expected Txn::Record, got {:?}", k))),
+                }
+            }
+        }
+
+        value
     }
 
     /// Scans a key range.
@@ -373,6 +425,7 @@ pub struct MvccScan {
     next_back_seen: Option<Vec<u8>>,
 }
 
+// TODO: Acquires SIREAD lock on each move.
 impl MvccScan {
     fn new(mut scan: KvScan, snapshot: Snapshot) -> Self {
         // Augment the underlying scan to decode the key and filter invisible versions. We don't
