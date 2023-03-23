@@ -5,7 +5,7 @@ use crossbeam_skiplist::map::Entry;
 use ouroboros::self_referencing;
 
 use crate::error::Result;
-use crate::storage::kv::structure::Range;
+use crate::storage::kv::Range;
 use super::iterators::StorageIter;
 use super::sstable::SsTableBuilder;
 

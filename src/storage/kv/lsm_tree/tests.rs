@@ -4,11 +4,11 @@ use bytes::Bytes;
 use tempfile::tempdir;
 
 #[cfg(test)]
-use crate::storage::kv::structure::ConcurrentStore;
+use crate::storage::kv::KvStore;
 #[cfg(test)]
-use crate::storage::kv::structure::KvScan;
+use crate::storage::kv::KvScan;
 #[cfg(test)]
-use crate::storage::kv::structure::Range;
+use crate::storage::kv::Range;
 
 #[cfg(test)]
 fn as_bytes(x: &[u8]) -> Bytes {

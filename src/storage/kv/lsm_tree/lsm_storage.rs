@@ -5,7 +5,7 @@ use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};
 
 use crate::error::Result;
-use super::super::{ConcurrentStore, Range, KvScan};
+use super::super::{KvStore, Range, KvScan};
 use super::block::Block;
 use super::iterators::{MergeIter, TwoMergeIter};
 use super::lsm_iterator::LsmIter;
@@ -60,7 +60,7 @@ impl LsmStorage {
     }
 }
 
-impl ConcurrentStore for LsmStorage {
+impl KvStore for LsmStorage {
     fn set(&self, key: &[u8], value: Vec<u8>) -> Result<()> {
         assert!(!key.is_empty(), "key cannot be empty");
         assert!(!value.is_empty(), "value cannot be empty");
@@ -104,12 +104,14 @@ impl ConcurrentStore for LsmStorage {
             ));
         }
         let mut merge_iter = MergeIter::create(sstable_iters)?;
-        match merge_iter.next() {
+        match merge_iter.next().transpose()? {
             None => Ok(None),
-            Some(Err(e)) => Err(e),
-            Some(Ok((result_key, value))) => {
+            Some((result_key, value)) => {
                 match key == result_key {
-                    true => Ok(Some(value)),
+                    true => match value.is_empty() {
+                        true => return Ok(None),
+                        false => return Ok(Some(value)),
+                    },
                     false => Ok(None),
                 }
             },
