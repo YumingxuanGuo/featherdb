@@ -2,11 +2,12 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+use serde::{Serialize, Deserialize};
+
 use crate::concurrency::{MVCC, Transaction, Mode};
 use crate::error::{Error, Result};
 use crate::sql::schema::{Catalog, Table};
 use crate::sql::types::{Row, Value, Expression};
-
 use super::{SqlTxn, SqlEngine, RowScan, IndexScan};
 
 
@@ -38,17 +39,53 @@ impl SqlEngine for KvSqlEngine {
     type EngineTxn = KvSqlTxn;
 
     fn begin(&self, mode: Mode) -> Result<Self::EngineTxn> {
-        Ok(KvSqlTxn { txn: self.kv.begin_with_mode(mode)? })
+        Ok(Self::EngineTxn::new(self.kv.begin_with_mode(mode)?))
     }
 
     fn resume(&self, id: u64) -> Result<Self::EngineTxn> {
-        Ok(KvSqlTxn { txn: self.kv.resume(id)? })
+        Ok(Self::EngineTxn::new(self.kv.resume(id)?))
     }
+}
+
+/// Serializes SQL metadata.
+fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(value)?)
+}
+
+/// Deserializes SQL metadata.
+fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
+    Ok(bincode::deserialize(bytes)?)
 }
 
 /// An SQL transaction based on an MVCC key/value transaction
 pub struct KvSqlTxn {
     txn: Transaction,
+}
+
+impl KvSqlTxn {
+    /// Creates a new SQL transaction from an MVCC transaction.
+    pub fn new(txn: Transaction) -> Self {
+        Self { txn }
+    }
+
+    /// Loads an index entry. TODO: ????
+    fn load_index(&self, table: &str, column: &str, value: &Value) -> Result<HashSet<Value>> {
+        Ok(self
+            .txn
+            .get(&SqlKey::Index(table.into(), column.into(), Some(value.into())).encode())?
+            .map(|v| deserialize(&v))
+            .transpose()?
+            .unwrap_or_else(HashSet::new))
+    }
+
+    /// Saves an index entry.
+    fn save_index(&self, table: &str, column: &str, value: &Value, index: HashSet<Value>) -> Result<()> {
+        let key = SqlKey::Index(table.into(), column.into(), Some(value.into())).encode();
+        match index.is_empty() {
+            true => self.txn.delete(&key),
+            false => self.txn.set(&key, serialize(&index)?),
+        }
+    }
 }
 
 impl SqlTxn for KvSqlTxn {
@@ -69,7 +106,28 @@ impl SqlTxn for KvSqlTxn {
     }
 
     fn create(&mut self, table: &str, row: Row) -> Result<()> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+        table.validate_row(&row, self)?;
+        let primary_key = table.get_row_key(&row)?;
+        if self.read(&table.name, &primary_key)?.is_some() {
+            return Err(Error::Value(format!(
+                "Primary key {} already exists for table {}",
+                primary_key, table.name
+            )));
+        }
+        self.txn.set(
+            &SqlKey::Row(Cow::Borrowed(&table.name), Some(Cow::Borrowed(&primary_key))).encode(),
+            serialize(&row)?,
+        )?;
+        
+        // Update indexes
+        for (i, column) in table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed) {
+            let mut index = self.load_index(&table.name, &column.name, &row[i])?;
+            index.insert(primary_key.clone());
+            self.save_index(&table.name, &column.name, &row[i], index)?;
+        }
+
+        Ok(())
     }
 
     fn read(&self, table: &str, id: &Value) -> Result<Option<Row>> {
@@ -116,5 +174,63 @@ impl Catalog for KvSqlTxn {
 
     fn scan_tables(&self) -> Result<crate::sql::schema::Tables> {
         todo!()
+    }
+}
+
+/// Encodes SQL keys, using an order-preserving encoding - see kv::encoding for details. Options can
+/// be None to get a keyspace prefix. We use table and column names directly as identifiers, to
+/// avoid additional indirection and associated overhead. It is not possible to change names, so
+/// this is ok. Uses Cows since we want to borrow when encoding but return owned when decoding.
+enum SqlKey<'a> {
+    /// A table schema key for the given table name
+    Table(Option<Cow<'a, str>>),
+    /// A key for an index entry
+    Index(Cow<'a, str>, Cow<'a, str>, Option<Cow<'a, Value>>),
+    /// A key for a row identified by table name and row primary key
+    Row(Cow<'a, str>, Option<Cow<'a, Value>>),
+}
+
+impl<'a> SqlKey<'a> {
+    /// Encodes the key as a byte vector
+    fn encode(self) -> Vec<u8> {
+        use crate::encoding::*;
+        match self {
+            Self::Table(None) => vec![0x01],
+            Self::Table(Some(name)) => [&[0x01][..], &encode_string(&name)].concat(),
+            Self::Index(table, column, None) => {
+                [&[0x02][..], &encode_string(&table), &encode_string(&column)].concat()
+            }
+            Self::Index(table, column, Some(value)) => [
+                &[0x02][..],
+                &encode_string(&table),
+                &encode_string(&column),
+                &encode_value(&value),
+            ]
+            .concat(),
+            Self::Row(table, None) => [&[0x03][..], &encode_string(&table)].concat(),
+            Self::Row(table, Some(pk)) => {
+                [&[0x03][..], &encode_string(&table), &encode_value(&pk)].concat()
+            }
+        }
+    }
+
+    /// Decodes a key from a byte vector
+    fn decode(mut bytes: &[u8]) -> Result<Self> {
+        use crate::encoding::*;
+        let bytes = &mut bytes;
+        let key = match take_byte(bytes)? {
+            0x01 => Self::Table(Some(take_string(bytes)?.into())),
+            0x02 => Self::Index(
+                take_string(bytes)?.into(),
+                take_string(bytes)?.into(),
+                Some(take_value(bytes)?.into()),
+            ),
+            0x03 => Self::Row(take_string(bytes)?.into(), Some(take_value(bytes)?.into())),
+            b => return Err(Error::Internal(format!("Unknown SQL key prefix {:x?}", b))),
+        };
+        if !bytes.is_empty() {
+            return Err(Error::Internal("Unexpected data remaining at end of key".into()));
+        }
+        Ok(key)
     }
 }
