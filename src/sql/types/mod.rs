@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 
 mod expression;
-use std::{borrow::Cow, hash::{Hash, Hasher}};
+use std::{borrow::Cow, hash::{Hash, Hasher}, cmp::Ordering};
 
 pub use expression::Expression;
 
@@ -71,6 +71,21 @@ impl<'a> From<Value> for Cow<'a, Value> {
 impl<'a> From<&'a Value> for Cow<'a, Value> {
     fn from(v: &'a Value) -> Self {
         Cow::Borrowed(v)
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Value::Null, Value::Null) => Some(Ordering::Equal),
+            (Value::Null, _) => Some(Ordering::Less),
+            (_, Value::Null) => Some(Ordering::Greater),
+            (Value::Boolean(a), Value::Boolean(b)) => a.partial_cmp(b),
+            (Value::Integer(a), Value::Integer(b)) => a.partial_cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
+            (_, _) => None,
+        }
     }
 }
 
