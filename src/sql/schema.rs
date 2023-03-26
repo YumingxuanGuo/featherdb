@@ -58,6 +58,13 @@ impl Table {
         Ok(Self { name, columns })
     }
 
+    /// Fetches a column by name.
+    pub fn get_column(&self, name: &str) -> Result<&Column> {
+        self.columns.iter().find(|column| column.name == name).ok_or_else(|| 
+            Error::Value(format!("Column {} does not exist in table {}", name, self.name))
+        )
+    }
+
     /// Fetches a column index by name.
     pub fn get_column_index(&self, name: &str) -> Result<usize> {
         self.columns.iter().position(|column| column.name == name).ok_or_else(|| 
