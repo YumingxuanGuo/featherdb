@@ -108,22 +108,22 @@ impl SqlTxn for KvSqlTxn {
     fn create(&mut self, table: &str, row: Row) -> Result<()> {
         let table = self.assert_read_table(table)?;
         table.validate_row(&row, self)?;
-        let primary_key = table.get_row_key(&row)?;
-        if self.read(&table.name, &primary_key)?.is_some() {
+        let id = table.get_row_key(&row)?;
+        if self.read(&table.name, &id)?.is_some() {
             return Err(Error::Value(format!(
                 "Primary key {} already exists for table {}",
-                primary_key, table.name
+                id, table.name
             )));
         }
         self.txn.set(
-            &SqlKey::Row(Cow::Borrowed(&table.name), Some(Cow::Borrowed(&primary_key))).encode(),
+            &SqlKey::Row(Cow::Borrowed(&table.name), Some(Cow::Borrowed(&id))).encode(),
             serialize(&row)?,
         )?;
         
         // Update indexes
         for (i, column) in table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed) {
             let mut index = self.load_index(&table.name, &column.name, &row[i])?;
-            index.insert(primary_key.clone());
+            index.insert(id.clone());
             self.save_index(&table.name, &column.name, &row[i], index)?;
         }
 
@@ -131,11 +131,45 @@ impl SqlTxn for KvSqlTxn {
     }
 
     fn read(&self, table: &str, id: &Value) -> Result<Option<Row>> {
-        todo!()
+        self.txn
+            .get(&SqlKey::Row(table.into(), Some(id.into())).encode())?
+            .map(|v| deserialize(&v))
+            .transpose()
     }
 
     fn update(&mut self, table: &str, id: &Value, row: Row) -> Result<()> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+
+        // If the primary key changes, we need to delete the old row and create a new one.
+        // Otherwise, we can just update the existing row.
+        if id != &table.get_row_key(&row)? {
+            self.delete(&table.name, id)?;
+            self.create(&table.name, row)?;
+            return Ok(());
+        }
+
+        // Update indexes.
+        let indexes: Vec<_> = table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed).collect();
+        if !indexes.is_empty() {
+            let old_row = self.read(&table.name, id)?.ok_or_else(|| 
+                Error::Value(format!("Row {} does not exist in table {}", id, &table.name))
+            )?;
+            for (i, column) in indexes {
+                // TODO: why twice?
+                if old_row[i] != row[i] {
+                    let mut index = self.load_index(&table.name, &column.name, &old_row[i])?;
+                    index.remove(id);
+                    self.save_index(&table.name, &column.name, &old_row[i], index)?;
+                    
+                    let mut index = self.load_index(&table.name, &column.name, &row[i])?;
+                    index.insert(id.clone());
+                    self.save_index(&table.name, &column.name, &row[i], index)?;
+                }
+            }
+        }
+
+        table.validate_row(&row, self)?;
+        self.txn.set(&SqlKey::Row(table.name.into(), Some(id.into())).encode(), serialize(&row)?)
     }
 
     fn delete(&mut self, table: &str, id: &Value) -> Result<()> {
