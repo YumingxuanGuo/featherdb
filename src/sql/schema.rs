@@ -58,6 +58,13 @@ impl Table {
         Ok(Self { name, columns })
     }
 
+    /// Fetches a column index by name.
+    pub fn get_column_index(&self, name: &str) -> Result<usize> {
+        self.columns.iter().position(|column| column.name == name).ok_or_else(|| 
+            Error::Value(format!("Column {} does not exist in table {}", name, self.name))
+        )
+    }   
+
     /// Returns the primary key value of a row.
     pub fn get_row_key(&self, row: &[Value]) -> Result<Value> {
         todo!()
