@@ -214,15 +214,57 @@ impl SqlTxn for KvSqlTxn {
     }
 
     fn read_index(&self, table: &str, column: &str, value: &Value) -> Result<HashSet<Value>> {
-        todo!()
+        if !self.assert_read_table(table)?.get_column(column)?.is_indexed {
+            return Err(Error::Value(format!("Column {} in table {} is not indexed",column, table)));
+        }
+        self.load_index(table, column, value)
     }
 
     fn scan(&self, table: &str, filter: Option<Expression>) -> Result<RowScan> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+        Ok(Box::new(
+            self.txn
+                .scan_prefix(&SqlKey::Row((&table.name).into(), None).encode())?
+                .map(|r| r.and_then(|(_, v)| deserialize(&v)))
+                .filter_map(move |r| match r {
+                    Ok(row) => match &filter {
+                        Some(filter) => match filter.evaluate(Some(&row)) {
+                            Ok(Value::Boolean(true)) => Some(Ok(row)),
+                            Ok(Value::Boolean(false)) => None,
+                            Ok(v) => Some(Err(Error::Value(format!(
+                                "Filter returned {}, expected boolean", v
+                            )))),
+                            Err(err) => Some(Err(err)),
+                        },
+                        None => Some(Ok(row)),
+                    }
+                    err => Some(err),
+                }),
+        ))
     }
 
     fn scan_index(&self, table: &str, column: &str) -> Result<IndexScan> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+        let column = table.get_column(column)?;
+        if !column.is_indexed {
+            return Err(Error::Value(format!(
+                "Column {} in table {} is not indexed", column.name, table.name
+            )));
+        }
+        Ok(Box::new(
+            self.txn
+                .scan_prefix(
+                    &SqlKey::Index((&table.name).into(), (&column.name).into(), None).encode()
+                )?
+                .map(|r| {
+                    let (k, v) = r?;
+                    let value = match SqlKey::decode(&k)? {
+                        SqlKey::Index(_, _, Some(value)) => value.into_owned(),
+                        _ => return Err(Error::Internal("Invalid index key".into())),
+                    };
+                    Ok((value, deserialize(&v)?))
+                })
+        ))
     }
 }
 
