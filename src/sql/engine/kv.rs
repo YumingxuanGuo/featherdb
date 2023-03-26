@@ -122,9 +122,9 @@ impl SqlTxn for KvSqlTxn {
         
         // Update indexes
         for (i, column) in table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed) {
-            let mut index = self.load_index(&table.name, &column.name, &row[i])?;
-            index.insert(id.clone());
-            self.save_index(&table.name, &column.name, &row[i], index)?;
+            let mut indexes = self.load_index(&table.name, &column.name, &row[i])?;
+            indexes.insert(id.clone());
+            self.save_index(&table.name, &column.name, &row[i], indexes)?;
         }
 
         Ok(())
@@ -173,7 +173,44 @@ impl SqlTxn for KvSqlTxn {
     }
 
     fn delete(&mut self, table: &str, id: &Value) -> Result<()> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+
+        // Check if the value of the to-be-deleted primary key is being referenced.
+        for (t, cs) in self.table_references(&table.name, true)? {
+            let t = self.assert_read_table(&t)?;
+            let cs = cs
+                .into_iter()
+                .map(|c| Ok((t.get_column_index(&c)?, c)))
+                .collect::<Result<Vec<_>>>()?;
+            let mut scan = self.scan(&t.name, None)?;
+            while let Some(row) = scan.next().transpose()? {
+                // There are two invalid deleting senarios:
+                // 1. PK's value is being referenced in another table;
+                // 2. PK's value is being referenced in the current table, and is not in the same row to be deleted.
+                for (i, c) in &cs {
+                    if row[*i] == *id && (t.name != table.name || id != &table.get_row_key(&row)?) {
+                        return Err(Error::Value(format!(
+                            "Cannot delete row {} from table {} because it is referenced by column {} in table {}",
+                            id, table.name, c, t.name
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Delete indexes.
+        let indexes: Vec<_> = table.columns.iter().enumerate().filter(|(_, c)| c.is_indexed).collect();
+        if !indexes.is_empty() {
+            if let Some(row) = self.read(&table.name, id)? {
+                for (i, column) in indexes {
+                    let mut index = self.load_index(&table.name, &column.name, &row[i])?;
+                    index.remove(id);
+                    self.save_index(&table.name, &column.name, &row[i], index)?;
+                }
+            }
+        }
+
+        self.txn.delete(&SqlKey::Row(table.name.into(), Some(id.into())).encode())
     }
 
     fn read_index(&self, table: &str, column: &str, value: &Value) -> Result<HashSet<Value>> {
