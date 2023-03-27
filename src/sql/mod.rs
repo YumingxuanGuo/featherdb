@@ -1,3 +1,5 @@
 pub mod engine;
+pub mod execution;
+pub mod plan;
 pub mod schema;
 pub mod types;
