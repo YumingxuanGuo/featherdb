@@ -70,11 +70,25 @@ impl Table {
         self.columns.iter().position(|column| column.name == name).ok_or_else(|| 
             Error::Value(format!("Column {} does not exist in table {}", name, self.name))
         )
-    }   
+    }
+
+    /// Returns the primary key column of the table.
+    pub fn get_primary_key(&self) -> Result<&Column> {
+        self.columns.iter().find(|column| column.is_primary_key).ok_or_else(|| 
+            Error::Value(format!("Primary key not found for table {}", self.name))
+        )
+    }
 
     /// Returns the primary key value of a row.
     pub fn get_row_key(&self, row: &[Value]) -> Result<Value> {
-        todo!()
+        row.get(
+            self.columns.
+                iter()
+                .position(|column| column.is_primary_key)
+                .ok_or_else(|| Error::Value(format!("Primary key not found for table {}", self.name)))?
+        )
+        .cloned()
+        .ok_or_else(|| Error::Value(format!("Primary key value not found for row")))
     }
 
     /// Validates a table schema.
