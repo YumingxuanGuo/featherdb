@@ -107,3 +107,12 @@ pub type Row = Vec<Value>;
 
 /// A row iterator
 pub type Rows = Box<dyn Iterator<Item = Result<Row>> + Send>;
+
+/// A column (in a result set, see schema::Column for table columns)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResColumn {
+    pub name: Option<String>,
+}
+
+/// A set of columns
+pub type Columns = Vec<ResColumn>;
