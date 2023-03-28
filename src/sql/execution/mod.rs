@@ -12,8 +12,9 @@ use serde_derive::{Deserialize, Serialize};
 
 use crate::concurrency::Mode;
 use crate::error::Result;
-use self::mutation::InsertExec;
+use self::mutation::{InsertExec, UpdateExec, DeleteExec};
 use self::schema::{CreateTableExec, DropTableExec};
+use self::source::KeyLookupExec;
 
 use super::engine::SqlTxn;
 use super::plan::Node;
@@ -31,15 +32,19 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
         match node {
             Node::CreateTable { schema } => CreateTableExec::new(schema),
             Node::DropTable { name } => DropTableExec::new(name),
+
             Node::Insert { table, columns, expression } => {
                 InsertExec::new(table, columns, expression)
             },
             Node::KeyLookup { table, alias, keys } => {
-                todo!()
+                KeyLookupExec::new(table, keys)
             },
-            Node::Update { table, source, expressions } => {
-                todo!()
-            },
+            Node::Update { table, source, expressions } => UpdateExec::new(
+                table,
+                Self::build(*source),
+                expressions.into_iter().map(|(i, _, e)| (i, e)).collect(),
+            ),
+            Node::Delete { table, source } => DeleteExec::new(table, Self::build(*source)),
         }
     }
 }
