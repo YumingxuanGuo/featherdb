@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::concurrency::{MVCC, Transaction, Mode};
 use crate::error::{Error, Result};
-use crate::sql::schema::{Catalog, Table};
+use crate::sql::schema::{Catalog, Table, Tables};
 use crate::sql::types::{Row, Value, Expression};
 use super::{SqlTxn, SqlEngine, RowScan, IndexScan};
 
@@ -270,23 +270,40 @@ impl SqlTxn for KvSqlTxn {
 
 impl Catalog for KvSqlTxn {
     fn create_table(&mut self, table: Table) -> Result<()> {
-        todo!()
+        if self.read_table(&table.name)?.is_some() {
+            return Err(Error::Value(format!("Table {} already exists", table.name)));
+        }
+        table.validate(self)?;
+        self.txn.set(&SqlKey::Table(Some((&table.name).into())).encode(), serialize(&table)?)
     }
 
     fn read_table(&self, table: &str) -> Result<Option<Table>> {
-        todo!()
-    }
-
-    fn assert_read_table(&self, table: &str) -> Result<Table> {
-        todo!()
+        self.txn.get(&SqlKey::Table(Some(table.into())).encode())?.map(|v| deserialize(&v)).transpose()
     }
 
     fn delete_table(&mut self, table: &str) -> Result<()> {
-        todo!()
+        let table = self.assert_read_table(table)?;
+        if let Some((t, cs)) = self.table_references(&table.name, false)?.first() {
+            return Err(Error::Value(format!(
+                "Cannot delete table {} because it is referenced by table {} column {}",
+                table.name, t, cs[0]
+            )));
+        }
+        let mut scan = self.scan(&table.name, None)?;
+        while let Some(row) = scan.next().transpose()? {
+            self.delete(&table.name, &table.get_row_key(&row)?)?;
+        }
+        self.txn.delete(&SqlKey::Table(Some(table.name.into())).encode())
     }
 
-    fn scan_tables(&self) -> Result<crate::sql::schema::Tables> {
-        todo!()
+    fn scan_tables(&self) -> Result<Tables> {
+        Ok(Box::new(
+            self.txn
+                .scan_prefix(&SqlKey::Table(None).encode())?
+                .map(|r| r.and_then(|(_, v)| deserialize(&v)))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+        ))
     }
 }
 
