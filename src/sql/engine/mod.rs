@@ -9,6 +9,10 @@ use std::collections::HashSet;
 
 use crate::concurrency::Mode;
 use crate::error::{Error, Result};
+use super::execution::ResultSet;
+use super::parser::Parser;
+use super::parser::ast;
+use super::plan::Plan;
 use super::schema::Catalog;
 use super::types::{Row, Value, Expression};
 
@@ -63,6 +67,91 @@ pub struct SqlSession<E: SqlEngine> {
     engine: E,
     /// The current session transaction, if any
     txn: Option<E::EngineTxn>,
+}
+
+impl <E: SqlEngine + 'static> SqlSession<E> {
+    /// Executes a query, managing transaction status for the session.
+    pub fn execute(&mut self, query: &str) -> Result<ResultSet> {
+        match Parser::new(query).parse()? {
+            ast::Statement::Begin { .. } if self.txn.is_none() => {
+                Err(Error::Value("Already in a transaction".into()))
+            },
+            ast::Statement::Begin { readonly: true, version: None } => {
+                let txn = self.engine.begin(Mode::ReadOnly)?;
+                let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
+                self.txn = Some(txn);
+                Ok(result)
+            },
+            ast::Statement::Begin { readonly: false, version: None } => {
+                let txn = self.engine.begin(Mode::ReadWrite)?;
+                let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
+                self.txn = Some(txn);
+                Ok(result)
+            },
+            ast::Statement::Begin { readonly: true, version: Some(version) } => {
+                let txn = self.engine.begin(Mode::Snapshot { version })?;
+                let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
+                self.txn = Some(txn);
+                Ok(result)
+            },
+            ast::Statement::Begin { readonly: false, version: Some(_) } => {
+                Err(Error::Value("Cannot specify version for read-write transactions".into()))
+            },
+
+            ast::Statement::Commit { .. } if self.txn.is_none() => {
+                Err(Error::Value("Not in a transaction".into()))
+            },
+            ast::Statement::Commit { .. } => {
+                let txn = self.txn.take().unwrap();
+                let id = txn.id();
+                // If the commit fails, we try to recover the transaction.
+                if let Err(err) = txn.commit() {
+                    if let Ok(t) = self.engine.resume(id) {
+                        self.txn = Some(t);
+                    }
+                    return Err(err);
+                }
+                Ok(ResultSet::Commit { id })
+            },
+
+            ast::Statement::Rollback if self.txn.is_none() => {
+                Err(Error::Value("Not in a transaction".into()))
+            },
+            ast::Statement::Rollback => {
+                let txn = self.txn.take().unwrap();
+                let id = txn.id();
+                // If the rollback fails, we try to recover the transaction.
+                if let Err(err) = txn.rollback() {
+                    if let Ok(t) = self.engine.resume(id) {
+                        self.txn = Some(t);
+                    }
+                    return Err(err);
+                }
+                Ok(ResultSet::Rollback { id })
+            },
+
+            statement if self.txn.is_some() => {
+                Plan::build(statement, self.txn.as_mut().unwrap())?
+                    .execute(self.txn.as_mut().unwrap())
+            },
+            statement => {
+                let mut txn = self.engine.begin(Mode::ReadWrite)?;
+                match Plan::build(statement, &mut txn)?.execute(&mut txn) {
+                    Ok(result) => {
+                        txn.commit()?;
+                        Ok(result)
+                    },
+                    Err(err) => {
+                        txn.rollback()?;
+                        Err(err)
+                    }
+                }
+            },
+
+            #[allow(unreachable_patterns)]
+            _ => unreachable!()
+        }
+    }
 }
 
 /// A row scan iterator
