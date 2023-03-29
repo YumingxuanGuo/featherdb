@@ -88,3 +88,24 @@ impl ResultSet {
         Box::new(std::iter::empty())
     }
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use crate::sql::schema::Column;
+    use crate::sql::types::{DataType, Value};
+    
+    pub fn set_up_column(name: String, default: Option<Value>, is_primary_key: bool) -> Column {
+        Column {
+            name,
+            datatype: DataType::Integer,
+            default,
+            is_indexed: false,
+            is_nullable: false,
+            is_primary_key,
+            is_unique: true,
+            references: None,
+        }
+    }
+}

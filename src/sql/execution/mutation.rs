@@ -160,3 +160,81 @@ impl<T: SqlTxn> Executor<T> for DeleteExec<T> {
         }
     }
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::kv::LsmStorage;
+
+    use super::super::tests::*;
+    use super::*;
+
+    #[test]
+    fn test_insert_executor_build_row() -> Result<()> {
+        let table = Table::new(
+            "test".to_string(),
+            vec![
+                set_up_column("a".to_string(), None, true),
+                set_up_column("b".to_string(), Some(Value::Integer(0)), false),
+                set_up_column("c".to_string(), Some(Value::Integer(0)), false),
+            ],
+        )?;
+
+        let row = InsertExec::build_row(
+            &table,
+            vec![Value::Integer(1), Value::Integer(2)],
+            &vec!["a".into(), "c".into()],
+        )?;
+        assert_eq!(row, vec![Value::Integer(1), Value::Integer(0), Value::Integer(2)]);
+
+        let result = InsertExec::build_row(
+            &table,
+            vec![Value::Integer(1), Value::Integer(2)],
+            &vec!["a".into(), "a".into()],
+        );
+        assert_eq!(result, Err(Error::Value(format!("Column {} given multiple times", "a"))));
+
+        let result = InsertExec::build_row(
+            &table,
+            vec![Value::Integer(1), Value::Integer(2)],
+            &vec!["b".into(), "c".into()],
+        );
+        assert_eq!(result, Err(Error::Value(format!("Column {} not given and has no default value", "a"))));
+        
+        let result = InsertExec::build_row(
+            &table,
+            vec![Value::Integer(1)],
+            &vec!["a".into(), "c".into()],
+        );
+        assert_eq!(result, Err(Error::Value("Column and value counts do not match".into())));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert_executor_pad_row() -> Result<()> {
+        let table = Table::new(
+            "test".to_string(),
+            vec![
+                set_up_column("a".to_string(), Some(Value::Integer(0)), true),
+                set_up_column("b".to_string(), None, false),
+                set_up_column("c".to_string(), Some(Value::Integer(0)), false),
+            ],
+        )?;
+
+        let row = InsertExec::pad_row(
+            &table,
+            vec![Value::Integer(1), Value::Integer(2)],
+        )?;
+        assert_eq!(row, vec![Value::Integer(1), Value::Integer(2), Value::Integer(0)]);
+        
+        let result = InsertExec::pad_row(
+            &table,
+            vec![Value::Integer(1)],
+        );
+        assert_eq!(result, Err(Error::Value("Column b not given and has no default value".into())));
+
+        Ok(())
+    }
+}
