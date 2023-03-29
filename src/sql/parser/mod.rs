@@ -1,6 +1,11 @@
-use crate::error::Result;
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
 
 pub mod ast;
+mod lexer;
+
+use crate::error::Result;
 
 /// An SQL parser
 pub struct Parser {
