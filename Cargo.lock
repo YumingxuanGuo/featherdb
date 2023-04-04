@@ -417,6 +417,7 @@ dependencies = [
  "derivative",
  "futures",
  "futures-util",
+ "lazy_static",
  "log",
  "moka",
  "ouroboros",
