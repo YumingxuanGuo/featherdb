@@ -3,6 +3,9 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
+mod planner;
+use planner::Planner;
+
 use std::fmt::{self, Display};
 use serde_derive::{Deserialize, Serialize};
 
@@ -42,7 +45,7 @@ impl Display for Plan {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Node {
     CreateTable { schema: Table },
-    DropTable { name: String },
+    DropTable { table: String },
 
     Insert {
         table: String,
