@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::sql::types::DataType;
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Begin {
         read_only: bool,
@@ -37,11 +38,11 @@ pub enum Statement {
 pub struct Column {
     pub name: String,
     pub datatype: DataType,
-    pub primary_key: bool,
-    pub nullable: Option<bool>,
+    pub is_primary_key: bool,
+    pub is_nullable: Option<bool>,
     pub default: Option<Expression>,
-    pub unique: bool,
-    pub index: bool,
+    pub is_unique: bool,
+    pub is_indexed: bool,
     pub references: Option<String>,
 }
 

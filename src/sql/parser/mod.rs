@@ -216,41 +216,41 @@ impl<'a> Parser<'a> {
                 Token::Keyword(Keyword::Varchar) => DataType::String,
                 token => return Err(Error::Parse(format!("Unexpected token {}", token))),
             },
-            primary_key: false,
-            nullable: None,
+            is_primary_key: false,
+            is_nullable: None,
             default: None,
-            unique: false,
-            index: false,
+            is_unique: false,
+            is_indexed: false,
             references: None,
         };
         while let Some(Token::Keyword(keyword)) = self.next_if_keyword() {
             match keyword {
                 Keyword::Primary => {
                     self.next_expect(Some(Keyword::Key.into()))?;
-                    column.primary_key = true;
+                    column.is_primary_key = true;
                 },
                 Keyword::Null => {
-                    if let Some(false) = column.nullable {
+                    if let Some(false) = column.is_nullable {
                         return Err(Error::Value(format!(
                             "Column {} can't be both not nullable and nullable",
                             column.name
                         )));
                     }
-                    column.nullable = Some(true)
+                    column.is_nullable = Some(true)
                 },
                 Keyword::Not => {
                     self.next_expect(Some(Keyword::Null.into()))?;
-                    if let Some(true) = column.nullable {
+                    if let Some(true) = column.is_nullable {
                         return Err(Error::Value(format!(
                             "Column {} can't be both not nullable and nullable",
                             column.name
                         )));
                     }
-                    column.nullable = Some(false)
+                    column.is_nullable = Some(false)
                 },
                 Keyword::Default => column.default = Some(self.parse_expression(0)?),
-                Keyword::Unique => column.unique = true,
-                Keyword::Index => column.index = true,
+                Keyword::Unique => column.is_unique = true,
+                Keyword::Index => column.is_indexed = true,
                 Keyword::References => column.references = Some(self.next_identifier()?),
                 keyword => return Err(Error::Parse(format!("Unexpected keyword {}", keyword))),
             }
