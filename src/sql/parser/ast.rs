@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::sql::schema::Column;
+use crate::sql::types::DataType;
 
 pub enum Statement {
     Begin {
@@ -30,6 +30,19 @@ pub enum Statement {
         table: String,
         r#where: Option<Expression>,
     },
+}
+
+/// A column
+#[derive(Clone, Debug, PartialEq)]
+pub struct Column {
+    pub name: String,
+    pub datatype: DataType,
+    pub primary_key: bool,
+    pub nullable: Option<bool>,
+    pub default: Option<Expression>,
+    pub unique: bool,
+    pub index: bool,
+    pub references: Option<String>,
 }
 
 /// Expressions
