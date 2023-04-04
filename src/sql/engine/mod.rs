@@ -76,25 +76,25 @@ impl <E: SqlEngine + 'static> SqlSession<E> {
             ast::Statement::Begin { .. } if self.txn.is_none() => {
                 Err(Error::Value("Already in a transaction".into()))
             },
-            ast::Statement::Begin { readonly: true, version: None } => {
+            ast::Statement::Begin { read_only: true, version: None } => {
                 let txn = self.engine.begin(Mode::ReadOnly)?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
                 self.txn = Some(txn);
                 Ok(result)
             },
-            ast::Statement::Begin { readonly: false, version: None } => {
+            ast::Statement::Begin { read_only: false, version: None } => {
                 let txn = self.engine.begin(Mode::ReadWrite)?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
                 self.txn = Some(txn);
                 Ok(result)
             },
-            ast::Statement::Begin { readonly: true, version: Some(version) } => {
+            ast::Statement::Begin { read_only: true, version: Some(version) } => {
                 let txn = self.engine.begin(Mode::Snapshot { version })?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
                 self.txn = Some(txn);
                 Ok(result)
             },
-            ast::Statement::Begin { readonly: false, version: Some(_) } => {
+            ast::Statement::Begin { read_only: false, version: Some(_) } => {
                 Err(Error::Value("Cannot specify version for read-write transactions".into()))
             },
 
