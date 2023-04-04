@@ -17,6 +17,24 @@ pub enum Token {
     Symbol(Symbol),
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Token::Number(n) => n,
+            Token::String(s) => s,
+            Token::Identifier(s) => s,
+            Token::Keyword(k) => k.to_str(),
+            Token::Symbol(s) => s.to_str(),
+        })
+    }
+}
+
+impl From<Keyword> for Token {
+    fn from(keyword: Keyword) -> Self {
+        Self::Keyword(keyword)
+    }
+}
+
 /// Lexer keywords
 #[derive(Clone, Debug, PartialEq)]
 pub enum Keyword {
@@ -259,6 +277,39 @@ pub enum Symbol {
     CloseParen,
     Comma,
     Semicolon,
+}
+
+impl Symbol {
+    pub fn to_str(&self) -> &str {
+        match self {
+            Self::Period => ".",
+            Self::Equal => "=",
+            Self::GreaterThan => ">",
+            Self::GreaterThanOrEqual => ">=",
+            Self::LessThan => "<",
+            Self::LessThanOrEqual => "<=",
+            Self::LessOrGreaterThan => "<>",
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::Asterisk => "*",
+            Self::Slash => "/",
+            Self::Caret => "^",
+            Self::Percent => "%",
+            Self::Exclamation => "!",
+            Self::NotEqual => "!=",
+            Self::Question => "?",
+            Self::OpenParen => "(",
+            Self::CloseParen => ")",
+            Self::Comma => ",",
+            Self::Semicolon => ";",
+        }
+    }
+}
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.to_str())
+    }
 }
 
 /// A lexer that tokenizes an input string as an iterator.
