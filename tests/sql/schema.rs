@@ -71,4 +71,53 @@ test_schema! {
         )
     "#,
     create_table_datatype_missing: "CREATE TABLE name (id)",
+    create_table_datatype_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value NULL)",
+
+    create_table_name_alphanumeric: "CREATE TABLE a_123 (id INTEGER PRIMARY KEY)",
+    create_table_name_case: "CREATE TABLE mIxEd_cAsE (ÄÅÆ STRING PRIMARY KEY)",
+    create_table_name_emoji: "CREATE TABLE 👋 (🆔 INTEGER PRIMARY KEY)",
+    create_table_name_emoji_quoted: r#"CREATE TABLE "👋" ("🆔" INTEGER PRIMARY KEY)"#,
+    create_table_name_japanese: "CREATE TABLE 表 (身元 INTEGER PRIMARY KEY, 名前 STRING)",
+    create_table_name_keyword: "CREATE TABLE table (id INTEGER PRIMARY KEY)",
+    create_table_name_keyword_quoted: r#"CREATE TABLE "table" (id INTEGER PRIMARY KEY)"#,
+    create_table_name_missing: "CREATE TABLE (id INTEGER PRIMARY KEY)",
+    create_table_name_quote_single: r#"CREATE TABLE 'name' (id INTEGER PRIMARY KEY)"#,
+    create_table_name_quote_double: r#"CREATE TABLE "name" (id INTEGER PRIMARY KEY)"#,
+    create_table_name_quote_double_unterminated: r#"CREATE TABLE "name (id INTEGER PRIMARY KEY)"#,
+    create_table_name_quote_double_escaped: r#"CREATE TABLE "name with "" quote" (id INTEGER PRIMARY KEY)"#,
+    create_table_name_quote_double_single: r#"CREATE TABLE "name with ' quote" (id INTEGER PRIMARY KEY)"#,
+    create_table_name_underscore_prefix: "CREATE TABLE _name (id INTEGER PRIMARY KEY)",
+
+    create_table_columns_empty: "CREATE TABLE name ()",
+    create_table_columns_missing: "CREATE TABLE name",
+
+    create_table_pk_missing: "CREATE TABLE name (id INTEGER)",
+    create_table_pk_multiple: "CREATE TABLE name (id INTEGER PRIMARY KEY, name STRING PRIMARY KEY)",
+    create_table_pk_nullable: "CREATE TABLE name (id INTEGER PRIMARY KEY NULL)",
+    create_table_pk_default: "CREATE TABLE name (id INTEGER PRIMARY KEY DEFAULT 1)",
+    create_table_pk_unique: "CREATE TABLE name (id INTEGER PRIMARY KEY UNIQUE)",
+
+    create_table_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NULL)",
+    create_table_null_not: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NOT NULL)",
+    create_table_null_not_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NULL NOT NULL)",
+    create_table_null_default: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING)",
+
+    create_table_default_boolean: "CREATE TABLE name (id INTEGER PRIMARY KEY, value BOOLEAN DEFAULT TRUE)",
+    create_table_default_float: "CREATE TABLE name (id INTEGER PRIMARY KEY, value FLOAT DEFAULT 3.14)",
+    create_table_default_integer: "CREATE TABLE name (id INTEGER PRIMARY KEY, value INTEGER DEFAULT 7)",
+    create_table_default_string: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING DEFAULT 'foo')",
+    create_table_default_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING DEFAULT NULL)",
+    create_table_default_null_not: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NOT NULL DEFAULT NULL)",
+    create_table_default_expr: "CREATE TABLE name (id INTEGER PRIMARY KEY, value INTEGER DEFAULT 1 + 2 * 3)",
+    create_table_default_conflict: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING DEFAULT 7)",
+    create_table_default_conflict_float_integer: "CREATE TABLE name (id INTEGER PRIMARY KEY, value FLOAT DEFAULT 7)",
+    create_table_default_conflict_integer_float: "CREATE TABLE name (id INTEGER PRIMARY KEY, value INTEGER DEFAULT 3.14)",
+
+    create_table_index: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING INDEX)",
+    create_table_index_pk: "CREATE TABLE name (id INTEGER PRIMARY KEY INDEX, value STRING)",
+
+    create_table_unique: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING UNIQUE)",
+    create_table_unique_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NULL UNIQUE)",
+    create_table_unique_not_null: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING NOT NULL UNIQUE)",
+    create_table_unique_default: "CREATE TABLE name (id INTEGER PRIMARY KEY, value STRING DEFAULT 'foo' UNIQUE)",
 }

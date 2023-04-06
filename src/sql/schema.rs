@@ -101,8 +101,8 @@ impl Table {
         }
         match self.columns.iter().filter(|column| column.is_primary_key).count() {
             1 => { },
-            0 => return Err(Error::Value(format!("Table {} has no primary key", self.name))),
-            _ => return Err(Error::Value(format!("Table {} has multiple primary keys", self.name))),
+            0 => return Err(Error::Value(format!("No primary key in table {}", self.name))),
+            _ => return Err(Error::Value(format!("Multiple primary keys in table {}", self.name))),
         };
         for column in &self.columns {
             column.validate(self, txn)?;

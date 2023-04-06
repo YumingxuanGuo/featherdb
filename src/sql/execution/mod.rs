@@ -3,7 +3,6 @@
 #![allow(unused_variables)]
 
 mod mutation;
-mod query;
 mod schema;
 mod source;
 
@@ -86,6 +85,7 @@ pub enum ResultSet {
 }
 
 impl ResultSet {
+    /// Creates an empty row iterator, for use by serde(default).
     fn empty_rows() -> Rows {
         Box::new(std::iter::empty())
     }

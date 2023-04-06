@@ -36,7 +36,7 @@ impl<'a> Parser<'a> {
 
     /// Grabs the next lexer token, or throws an error if none is found.
     fn next(&mut self) -> Result<Token> {
-        self.lexer.next().unwrap_or_else(|| Err(Error::Parse("unexpected end of input".into())))
+        self.lexer.next().unwrap_or_else(|| Err(Error::Parse("Unexpected end of input".into())))
     }
 
     /// Grabs the next lexer token, and returns it if it was expected or otherwise throws an error.
@@ -52,7 +52,7 @@ impl<'a> Parser<'a> {
             },
             None => {
                 if let Some(token) = self.peek()? {
-                    Err(Error::Parse(format!("Expected end of tokens, found {}", token)))
+                    Err(Error::Parse(format!("Expected end of tokens, got {}", token)))
                 } else {
                     Ok(None)
                 }
@@ -64,7 +64,7 @@ impl<'a> Parser<'a> {
     fn next_identifier(&mut self) -> Result<String> {
         match self.next()? {
             Token::Identifier(identifier) => Ok(identifier),
-            token => Err(Error::Parse(format!("Expected identifier, found {}", token))),
+            token => Err(Error::Parse(format!("Expected identifier, got {}", token))),
         }
     }
 

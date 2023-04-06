@@ -392,7 +392,7 @@ impl<'a> Lexer<'a> {
         }
         Keyword::from_str(&name)
             .map(Token::Keyword)
-            .or_else(|| Some(Token::Identifier(name)))
+            .or_else(|| Some(Token::Identifier(name.to_lowercase())))
     }
 
     /// Scans the input for the next quoted ident, if any.
