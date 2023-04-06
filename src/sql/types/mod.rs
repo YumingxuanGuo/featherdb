@@ -20,6 +20,17 @@ pub enum DataType {
     String,
 }
 
+impl std::fmt::Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Boolean => "BOOLEAN",
+            Self::Integer => "INTEGER",
+            Self::Float => "FLOAT",
+            Self::String => "STRING",
+        })
+    }
+}
+
 /// A specific value of a data type
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Value {
