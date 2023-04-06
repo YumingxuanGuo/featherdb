@@ -11,14 +11,14 @@ use derivative::Derivative;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::concurrency::Mode;
-use crate::error::Result;
+use crate::error::{Result, Error};
 use self::mutation::{InsertExec, UpdateExec, DeleteExec};
 use self::schema::{CreateTableExec, DropTableExec};
-use self::source::KeyLookupExec;
+use self::source::{KeyLookupExec, Scan};
 
 use super::engine::SqlTxn;
 use super::plan::Node;
-use super::types::{Rows, Columns};
+use super::types::{Rows, Columns, Value, Row};
 
 /// A plan executor.
 pub trait Executor<T: SqlTxn> {
@@ -31,7 +31,7 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
     pub fn build(node: Node) -> Box<dyn Executor<T>> {
         match node {
             Node::CreateTable { schema } => CreateTableExec::new(schema),
-            Node::DropTable { name } => DropTableExec::new(name),
+            Node::DropTable { table } => DropTableExec::new(table),
 
             Node::Insert { table, columns, expression } => {
                 InsertExec::new(table, columns, expression)
@@ -45,6 +45,8 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
                 expressions.into_iter().map(|(i, _, e)| (i, e)).collect(),
             ),
             Node::Delete { table, source } => DeleteExec::new(table, Self::build(*source)),
+
+            Node::Scan { table, filter, alias: _ } => Scan::new(table, filter),
         }
     }
 }
@@ -86,6 +88,20 @@ pub enum ResultSet {
 impl ResultSet {
     fn empty_rows() -> Rows {
         Box::new(std::iter::empty())
+    }
+
+    /// Converts the ResultSet into a row, or errors if not a query result with rows.
+    pub fn into_row(self) -> Result<Row> {
+        if let ResultSet::Query { mut rows, .. } = self {
+            rows.next().transpose()?.ok_or_else(|| Error::Value("No rows returned".into()))
+        } else {
+            Err(Error::Value(format!("Not a query result: {:?}", self)))
+        }
+    }
+
+    /// Converts the ResultSet into a value, if possible. TODO: Read.
+    pub fn into_value(self) -> Result<Value> {
+        self.into_row()?.into_iter().next().ok_or_else(|| Error::Value("No value returned".into()))
     }
 }
 
