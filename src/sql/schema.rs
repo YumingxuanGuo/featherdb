@@ -2,11 +2,14 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
+use std::fmt::{self, Display};
+
 use serde_derive::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use super::types::{DataType, Value};
 use super::engine::SqlTxn;
+use super::parser::format_ident;
+use super::types::{DataType, Value};
 
 /// The catalog stores schema information
 pub trait Catalog {
@@ -120,6 +123,18 @@ impl Table {
     }
 }
 
+impl Display for Table {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "CREATE TABLE {} (\n{}\n)",
+            format_ident(&self.name),
+            self.columns.iter().map(|c| format!("  {}", c)).collect::<Vec<String>>().join(",\n")
+        )
+    }
+}
+
+
 /// A table scan iterator
 pub type Tables = Box<dyn DoubleEndedIterator<Item = Table> + Send>;
 
@@ -145,12 +160,65 @@ pub struct Column {
 }
 
 impl Column {
-    /// Validates a column schema.
+    /// Validates a column schema. TODO: Read.
     pub fn validate(&self, table: &Table, txn: &mut dyn SqlTxn) -> Result<()> {
-        todo!()
+        // Validate primary key
+        if self.is_primary_key && self.is_nullable {
+            return Err(Error::Value(format!("Primary key {} cannot be nullable", self.name)));
+        }
+        if self.is_primary_key && !self.is_unique {
+            return Err(Error::Value(format!("Primary key {} must be unique", self.name)));
+        }
+
+        // Validate default value
+        if let Some(default) = &self.default {
+            if let Some(datatype) = default.datatype() {
+                if datatype != self.datatype {
+                    return Err(Error::Value(format!(
+                        "Default value for column {} has datatype {}, must be {}",
+                        self.name, datatype, self.datatype
+                    )));
+                }
+            } else if !self.is_nullable {
+                return Err(Error::Value(format!(
+                    "Can't use NULL as default value for non-nullable column {}",
+                    self.name
+                )));
+            }
+        } else if self.is_nullable {
+            return Err(Error::Value(format!(
+                "Nullable column {} must have a default value",
+                self.name
+            )));
+        }
+
+        // Validate references
+        if let Some(reference) = &self.references {
+            let target = if reference == &table.name {
+                table.clone()
+            } else if let Some(table) = txn.read_table(reference)? {
+                table
+            } else {
+                return Err(Error::Value(format!(
+                    "Table {} referenced by column {} does not exist",
+                    reference, self.name
+                )));
+            };
+            if self.datatype != target.get_primary_key()?.datatype {
+                return Err(Error::Value(format!(
+                    "Can't reference {} primary key of table {} from {} column {}",
+                    target.get_primary_key()?.datatype,
+                    target.name,
+                    self.datatype,
+                    self.name
+                )));
+            }
+        }
+
+        Ok(())
     }
 
-    /// Validates a column value.
+    /// Validates a column value. TODO: Read.
     pub fn validate_value(
         &self, 
         value: &Value, 
@@ -158,6 +226,81 @@ impl Column {
         table: &Table, 
         txn: &mut dyn SqlTxn
     ) -> Result<()> {
-        todo!()
+        // Validate datatype
+        match value.datatype() {
+            None if self.is_nullable => Ok(()),
+            None => Err(Error::Value(format!("NULL value not allowed for column {}", self.name))),
+            Some(ref datatype) if datatype != &self.datatype => Err(Error::Value(format!(
+                "Invalid datatype {} for {} column {}",
+                datatype, self.datatype, self.name
+            ))),
+            _ => Ok(()),
+        }?;
+
+        // Validate value
+        match value {
+            Value::String(s) if s.len() > 1024 => {
+                Err(Error::Value("Strings cannot be more than 1024 bytes".into()))
+            }
+            _ => Ok(()),
+        }?;
+
+        // Validate outgoing references
+        if let Some(target) = &self.references {
+            match value {
+                Value::Null => Ok(()),
+                Value::Float(f) if f.is_nan() => Ok(()),
+                v if target == &table.name && v == primary_key => Ok(()),
+                v if txn.read(target, v)?.is_none() => Err(Error::Value(format!(
+                    "Referenced primary key {} in table {} does not exist",
+                    v, target,
+                ))),
+                _ => Ok(()),
+            }?;
+        }
+
+        // Validate uniqueness constraints
+        if self.is_unique && !self.is_primary_key && value != &Value::Null {
+            let index = table.get_column_index(&self.name)?;
+            let mut scan = txn.scan(&table.name, None)?;
+            while let Some(row) = scan.next().transpose()? {
+                if row.get(index).unwrap_or(&Value::Null) == value
+                    && &table.get_row_key(&row)? != primary_key
+                {
+                    return Err(Error::Value(format!(
+                        "Unique value {} already exists for column {}",
+                        value, self.name
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut sql = format_ident(&self.name);
+        sql += &format!(" {}", self.datatype);
+        if self.is_primary_key {
+            sql += " PRIMARY KEY";
+        }
+        if !self.is_nullable && !self.is_primary_key {
+            sql += " NOT NULL";
+        }
+        if let Some(default) = &self.default {
+            sql += &format!(" DEFAULT {}", default);
+        }
+        if self.is_unique && !self.is_primary_key {
+            sql += " UNIQUE";
+        }
+        if let Some(reference) = &self.references {
+            sql += &format!(" REFERENCES {}", reference);
+        }
+        if self.is_indexed {
+            sql += " INDEX";
+        }
+        write!(f, "{}", sql)
     }
 }
