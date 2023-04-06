@@ -191,6 +191,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
+        self.next_expect(Some(Token::Symbol(lexer::Symbol::CloseParen)))?;
         Ok(ast::Statement::CreateTable { name, columns })
     }
 

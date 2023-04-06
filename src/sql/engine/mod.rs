@@ -4,14 +4,14 @@
 
 // The SQL engine provides fundamental CRUD storage operations.
 mod kv;
+pub use kv::KvSqlEngine;
+pub use crate::concurrency::Mode;
 
 use std::collections::HashSet;
 
-use crate::concurrency::Mode;
 use crate::error::{Error, Result};
 use super::execution::ResultSet;
-use super::parser::Parser;
-use super::parser::ast;
+use super::parser::{Parser, ast};
 use super::plan::Plan;
 use super::schema::Catalog;
 use super::types::{Row, Value, Expression};
@@ -73,7 +73,7 @@ impl <E: SqlEngine + 'static> SqlSession<E> {
     /// Executes a query, managing transaction status for the session.
     pub fn execute(&mut self, query: &str) -> Result<ResultSet> {
         match Parser::new(query).parse()? {
-            ast::Statement::Begin { .. } if self.txn.is_none() => {
+            ast::Statement::Begin { .. } if self.txn.is_some() => {
                 Err(Error::Value("Already in a transaction".into()))
             },
             ast::Statement::Begin { read_only: true, version: None } => {

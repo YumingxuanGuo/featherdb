@@ -321,7 +321,11 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.scan().transpose()
+        match self.scan() {
+            Ok(Some(token)) => Some(Ok(token)),
+            Ok(None) => self.iter.peek().map(|c| Err(Error::Parse(format!("Unexpected character {}", c)))),
+            Err(err) => Some(Err(err)),
+        }
     }
 }
 
@@ -360,11 +364,11 @@ impl<'a> Lexer<'a> {
     where
         F: Fn(char) -> bool,
     {
-        let mut s = String::new();
+        let mut str = String::new();
         while let Some(c) = self.next_if(&predicate) {
-            s.push(c);
+            str.push(c);
         }
-        Some(s).filter(|v| v.is_empty())
+        Some(str).filter(|s| !s.is_empty())
     }
 
     /// Scans the input for the next token if any, ignoring leading whitespace.
