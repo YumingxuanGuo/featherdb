@@ -25,7 +25,7 @@ pub struct Plan{
 impl Plan {
     /// Builds a plan from a AST statement.
     pub fn build<C: Catalog>(statement: ast::Statement, catalog: &mut C) -> Result<Self> {
-        todo!()
+        Planner::new(catalog).build(statement)
     }
 
     /// Executes the plan, consuming it and returning a result set.
@@ -56,6 +56,11 @@ pub enum Node {
         table: String,
         alias: Option<String>,
         keys: Vec<Value>,
+    },
+    Scan {
+        table: String,
+        alias: Option<String>,
+        filter: Option<Expression>,
     },
     Update {
         table: String,
