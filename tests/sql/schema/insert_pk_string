@@ -1,0 +1,10 @@
+Query: INSERT INTO "string" VALUES ('baz')
+Result: Create { count: 1 }
+
+Storage:
+CREATE TABLE "string" (
+  pk STRING PRIMARY KEY
+)
+[String("bar")]
+[String("baz")]
+[String("foo")]

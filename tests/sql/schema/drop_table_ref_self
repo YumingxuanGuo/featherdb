@@ -1,0 +1,12 @@
+Query: DROP TABLE self
+Result: DropTable { name: "self" }
+
+Storage:
+CREATE TABLE source (
+  id INTEGER PRIMARY KEY,
+  target_id INTEGER DEFAULT NULL REFERENCES target
+)
+
+CREATE TABLE target (
+  id INTEGER PRIMARY KEY
+)
