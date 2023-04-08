@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package database;
+
+service Database {
+    rpc Execute (ExecutionRequest) returns (ExecutionReply);
+}
+
+message ExecutionRequest {
+    bytes data = 1;
+}
+
+message ExecutionReply {
+    bytes data = 1;
+}
