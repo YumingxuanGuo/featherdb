@@ -21,12 +21,14 @@ impl std::error::Error for Error {}
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Config(s) | Error::Internal(s) | Error::Parse(s) | Error::Value(s) => {
-                write!(f, "{}", s)
-            }
-            Error::Abort => write!(f, "Operation aborted"),
-            Error::Serialization => write!(f, "Serialization failure, retry transaction"),
-            Error::ReadOnly => write!(f, "Read-only transaction"),
+            Error::Config(s) => write!(f, "[Config] {}", s),
+            Error::Internal(s) => write!(f, "[Internal] {}", s),
+            Error::Parse(s) => write!(f, "[Parse] {}", s),
+            Error::Value(s) => write!(f, "[Value] {}", s),
+
+            Error::Abort => write!(f, "[Abort] Operation aborted"),
+            Error::ReadOnly => write!(f, "[ReadOnly] Read-only transaction"),
+            Error::Serialization => write!(f, "[Serialization] Serialization failure, retry transaction"),
         }
     }
 }
@@ -138,5 +140,27 @@ impl<T> From<tokio::sync::mpsc::error::TrySendError<T>> for Error {
 impl From<tokio::sync::oneshot::error::RecvError> for Error {
     fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
         Error::Internal(err.to_string())
+    }
+}
+
+impl From<tonic::Status> for Error {
+    fn from(err: tonic::Status) -> Self {
+        let chunks = err.message().split(" ").collect::<Vec<_>>();
+        match chunks[0] {
+            "[Config]" => Error::Config(chunks[1..].join(" ")),
+            "[Internal]" => Error::Internal(chunks[1..].join(" ")),
+            "[Parse]" => Error::Parse(chunks[1..].join(" ")),
+            "[Value]" => Error::Value(chunks[1..].join(" ")),
+            "[Abort]" => Error::Abort,
+            "[ReadOnly]" => Error::ReadOnly,
+            "[Serialization]" => Error::Serialization,
+            _ => Error::Internal(format!("Unknown error type: {}", err.message()).to_string()),
+        }
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        tonic::Status::internal(err.to_string())
     }
 }
