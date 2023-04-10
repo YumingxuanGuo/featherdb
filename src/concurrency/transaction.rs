@@ -306,6 +306,16 @@ impl Mode {
             _ => false,
         }
     }
+
+    /// Checks whether a mode satisfies a mode (i.e. ReadWrite satisfies ReadOnly).
+    pub fn satisfies(&self, other: &Mode) -> bool {
+        match (self, other) {
+            (Mode::ReadWrite, Mode::ReadOnly) => true,
+            (Mode::Snapshot { .. }, Mode::ReadOnly) => true,
+            (_, _) if self == other => true,
+            (_, _) => false,
+        }
+    }
 }
 
 /// A versioned snapshot, containing visibility information about concurrent transactions.
