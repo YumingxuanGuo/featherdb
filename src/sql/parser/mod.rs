@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::BTreeMap;
 
-pub use lexer::{Keyword, Lexer, Token};
+pub use lexer::{Keyword, Symbol, Lexer, Token};
 
 use crate::error::{Result, Error};
 use super::types::DataType;
