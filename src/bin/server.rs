@@ -1,24 +1,28 @@
 use featherdb::concurrency::MVCC;
-use featherdb::proto::database;
+use featherdb::error::Result;
+use featherdb::proto::registration::registration_server::RegistrationServer;
 use featherdb::sql::engine::KvSqlEngine;
 use featherdb::storage::kv::StdBPlusTree;
 use tonic::transport::Server;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     let addr = "127.0.0.1:50052".parse()?;
 
-    println!("DatabaseServer listening on {}", addr);
+    println!("FeatherDB server listening on {}", addr);
 
     let engine = KvSqlEngine::new(MVCC::new(
         Box::new(StdBPlusTree::new()),
         false,
     ));
     let server = featherdb::server::Server::new(engine);
-    Server::builder()
-        .add_service(database::database_server::DatabaseServer::new(server))
+    match Server::builder()
+        .add_service(RegistrationServer::new(server))
         .serve(addr)
-        .await?;
+        .await {
+            Ok(_) => { },
+            Err(err) => println!("Registration server failed: {:?}", err),
+        };
 
     Ok(())
 }
