@@ -13,7 +13,7 @@ fn setup(queries: Vec<&str>) -> Result<KvSqlEngine> {
         Box::new(StdBPlusTree::new()),
         false,
     ));
-    let mut session = engine.session()?;
+    let session = engine.session()?;
     session.execute("BEGIN")?;
     for query in queries {
         session.execute(query)?;

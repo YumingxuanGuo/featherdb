@@ -8,6 +8,8 @@ pub use kv::KvSqlEngine;
 pub use crate::concurrency::Mode;
 
 use std::collections::HashSet;
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::error::{Error, Result};
 use super::execution::ResultSet;
@@ -27,7 +29,7 @@ pub trait SqlEngine: Clone {
 
     /// Begins a session for executing individual statements
     fn session(&self) -> Result<SqlSession<Self>> {
-        Ok(SqlSession { engine: self.clone(), txn: None })
+        Ok(SqlSession { engine: self.clone(), txn: Arc::new(Mutex::new(None)) })
     }
 
     /// Resumes an active transaction with the given ID
@@ -66,73 +68,74 @@ pub struct SqlSession<E: SqlEngine> {
     /// The underlying engine
     engine: E,
     /// The current session transaction, if any
-    txn: Option<E::EngineTxn>,
+    txn: Arc<Mutex<Option<E::EngineTxn>>>,
 }
 
 impl <E: SqlEngine + 'static> SqlSession<E> {
     /// Executes a query, managing transaction status for the session.
-    pub fn execute(&mut self, query: &str) -> Result<ResultSet> {
+    pub fn execute(&self, query: &str) -> Result<ResultSet> {
+        let mut guard = self.txn.lock();
         match Parser::new(query).parse()? {
-            ast::Statement::Begin { .. } if self.txn.is_some() => {
+            ast::Statement::Begin { .. } if guard.is_some() => {
                 Err(Error::Value("Already in a transaction".into()))
             },
             ast::Statement::Begin { read_only: true, version: None } => {
                 let txn = self.engine.begin(Mode::ReadOnly)?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
-                self.txn = Some(txn);
+                *guard = Some(txn);
                 Ok(result)
             },
             ast::Statement::Begin { read_only: false, version: None } => {
                 let txn = self.engine.begin(Mode::ReadWrite)?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
-                self.txn = Some(txn);
+                *guard = Some(txn);
                 Ok(result)
             },
             ast::Statement::Begin { read_only: true, version: Some(version) } => {
                 let txn = self.engine.begin(Mode::Snapshot { version })?;
                 let result = ResultSet::Begin { id: txn.id(), mode: txn.mode() };
-                self.txn = Some(txn);
+                *guard = Some(txn);
                 Ok(result)
             },
             ast::Statement::Begin { read_only: false, version: Some(_) } => {
                 Err(Error::Value("Cannot specify version for read-write transactions".into()))
             },
 
-            ast::Statement::Commit { .. } if self.txn.is_none() => {
+            ast::Statement::Commit { .. } if guard.is_none() => {
                 Err(Error::Value("Not in a transaction".into()))
             },
             ast::Statement::Commit { .. } => {
-                let txn = self.txn.take().unwrap();
+                let txn = guard.take().unwrap();
                 let id = txn.id();
                 // If the commit fails, we try to recover the transaction.
                 if let Err(err) = txn.commit() {
                     if let Ok(t) = self.engine.resume(id) {
-                        self.txn = Some(t);
+                        *guard = Some(t);
                     }
                     return Err(err);
                 }
                 Ok(ResultSet::Commit { id })
             },
 
-            ast::Statement::Rollback if self.txn.is_none() => {
+            ast::Statement::Rollback if guard.is_none() => {
                 Err(Error::Value("Not in a transaction".into()))
             },
             ast::Statement::Rollback => {
-                let txn = self.txn.take().unwrap();
+                let txn = guard.take().unwrap();
                 let id = txn.id();
                 // If the rollback fails, we try to recover the transaction.
                 if let Err(err) = txn.rollback() {
                     if let Ok(t) = self.engine.resume(id) {
-                        self.txn = Some(t);
+                        *guard = Some(t);
                     }
                     return Err(err);
                 }
                 Ok(ResultSet::Rollback { id })
             },
 
-            statement if self.txn.is_some() => {
-                Plan::build(statement, self.txn.as_mut().unwrap())?
-                    .execute(self.txn.as_mut().unwrap())
+            statement if guard.is_some() => {
+                Plan::build(statement, guard.as_mut().unwrap())?
+                    .execute(guard.as_mut().unwrap())
             },
             statement => {
                 let mut txn = self.engine.begin(Mode::ReadWrite)?;
@@ -151,6 +154,26 @@ impl <E: SqlEngine + 'static> SqlSession<E> {
             #[allow(unreachable_patterns)]
             _ => unreachable!()
         }
+    }
+
+    /// Runs a closure in the session's transaction, or a new transaction if none is active.
+    pub fn with_txn<R, F>(&self, mode: Mode, func: F) -> Result<R>
+    where
+        F: FnOnce(&mut E::EngineTxn) -> Result<R>,
+    {
+        let mut guard = self.txn.lock();
+        if let Some(ref mut txn) = *guard {
+            if !txn.mode().satisfies(&mode) {
+                return Err(Error::Value(
+                    "The operation cannot run in the current transaction".into(),
+                ));
+            }
+            return func(txn);
+        }
+        let mut txn = self.engine.begin(mode)?;
+        let result = func(&mut txn);
+        txn.rollback()?;
+        result
     }
 }
 
