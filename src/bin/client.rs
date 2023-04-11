@@ -66,7 +66,7 @@ impl FeatherClient {
                 Err(err) => {
                     let msg = err.to_string();
                     let chunks = msg.split(" ").collect::<Vec<_>>();
-                    println!("Error: {}", chunks[1..].join(" "));
+                    println!("  Error: {}", chunks[1..].join(" "));
                 }
             }
         }
@@ -110,25 +110,25 @@ impl FeatherClient {
             Reply::Query(result_set) => {
                 match result_set {
                     ResultSet::Begin { id, mode } => match mode {
-                        Mode::ReadWrite => println!("Began transaction {}", id),
-                        Mode::ReadOnly => println!("Began read-only transaction {}", id),
+                        Mode::ReadWrite => println!("  Began transaction {}", id),
+                        Mode::ReadOnly => println!("  Began read-only transaction {}", id),
                         Mode::Snapshot { version, .. } => println!(
-                            "Began read-only transaction {} in snapshot at version {}",
+                            "  Began read-only transaction {} in snapshot at version {}",
                             id, version
                         ),
                     },
-                    ResultSet::Commit { id } => println!("Committed transaction {}", id),
-                    ResultSet::Rollback { id } => println!("Rolled back transaction {}", id),
-                    ResultSet::Create { count } => println!("Created {} rows", count),
-                    ResultSet::Delete { count } => println!("Deleted {} rows", count),
-                    ResultSet::Update { count } => println!("Updated {} rows", count),
-                    ResultSet::CreateTable { name } => println!("Created table {}", name),
-                    ResultSet::DropTable { name } => println!("Dropped table {}", name),
+                    ResultSet::Commit { id } => println!("  Committed transaction {}", id),
+                    ResultSet::Rollback { id } => println!("  Rolled back transaction {}", id),
+                    ResultSet::Create { count } => println!("  Created {} rows", count),
+                    ResultSet::Delete { count } => println!("  Deleted {} rows", count),
+                    ResultSet::Update { count } => println!("  Updated {} rows", count),
+                    ResultSet::CreateTable { name } => println!("  Created table {}", name),
+                    ResultSet::DropTable { name } => println!("  Dropped table {}", name),
                     ResultSet::Explain(plan) => println!("{}", plan.to_string()),
                     ResultSet::Query { columns, mut rows } => {
                         if self.show_headers {
                             println!(
-                                "{}",
+                                "  {}",
                                 columns
                                     .iter()
                                     .map(|c| c.name.as_deref().unwrap_or("?"))
@@ -138,14 +138,14 @@ impl FeatherClient {
                         }
                         while let Some(row) = rows.next().transpose()? {
                             println!(
-                                "{}",
+                                "  {}",
                                 row.into_iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join("|")
                             );
                         }
                     },
                 }
             },
-            _ => return Err(Error::Internal("Unexpected reply.".to_string())),
+            _ => return Err(Error::Internal("  Unexpected reply.".to_string())),
         }
 
         Ok(())
@@ -169,11 +169,11 @@ impl FeatherClient {
             "!headers" => match getargs(1)?[0] {
                 "on" => {
                     self.show_headers = true;
-                    println!("Headers enabled");
+                    println!("  Headers enabled");
                 }
                 "off" => {
                     self.show_headers = false;
-                    println!("Headers disabled");
+                    println!("  Headers disabled");
                 }
                 v => return Err(Error::Parse(format!("Invalid value {}, expected on or off", v))),
             },
