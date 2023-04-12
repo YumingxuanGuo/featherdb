@@ -3,6 +3,7 @@
 #![allow(unused_variables)]
 
 mod mutation;
+mod query;
 mod schema;
 mod source;
 
@@ -12,6 +13,7 @@ use serde_derive::{Deserialize, Serialize};
 use crate::concurrency::Mode;
 use crate::error::{Result, Error};
 use self::mutation::{InsertExec, UpdateExec, DeleteExec};
+use self::query::FilterExec;
 use self::schema::{CreateTableExec, DropTableExec};
 use self::source::{KeyLookupExec, Scan};
 
@@ -46,6 +48,10 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
             Node::Delete { table, source } => DeleteExec::new(table, Self::build(*source)),
 
             Node::Scan { table, filter, alias: _ } => Scan::new(table, filter),
+            Node::Filter { source, predicate } => FilterExec::new(Self::build(*source), predicate),
+            Node::Projection { source, expressions } => todo!(),
+            Node::NestedLoopJoin { left, left_size, right, predicate, outer } => todo!(),
+            Node::Nothing => todo!(),
         }
     }
 }
@@ -73,6 +79,8 @@ pub enum ResultSet {
         #[derivative(PartialEq = "ignore")]
         #[serde(skip, default = "ResultSet::empty_rows")]
         rows: Rows,
+        // FIXME: We buffer rows for now to bypass gRPC's lack of streaming support.
+        buffered_rows: Vec<Row>,
     },
 
     /// Table created
