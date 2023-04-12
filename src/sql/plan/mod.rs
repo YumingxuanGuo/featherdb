@@ -18,7 +18,7 @@ use super::types::{Expression, Value};
 
 /// A query plan
 #[derive(Debug)]
-pub struct Plan{
+pub struct Plan {
     pub node: Node
 }
 
@@ -40,7 +40,6 @@ impl Display for Plan {
     }
 }
 
-
 /// A plan node
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Node {
@@ -57,11 +56,6 @@ pub enum Node {
         alias: Option<String>,
         keys: Vec<Value>,
     },
-    Scan {
-        table: String,
-        alias: Option<String>,
-        filter: Option<Expression>,
-    },
     Update {
         table: String,
         source: Box<Node>,
@@ -71,6 +65,28 @@ pub enum Node {
         table: String,
         source: Box<Node>,
     },
+
+    Scan {
+        table: String,
+        alias: Option<String>,
+        filter: Option<Expression>,
+    },
+    Filter {
+        source: Box<Node>,
+        predicate: Expression,
+    },
+    Projection {
+        source: Box<Node>,
+        expressions: Vec<(Expression, Option<String>)>,
+    },
+    NestedLoopJoin {
+        left: Box<Node>,
+        left_size: usize,
+        right: Box<Node>,
+        predicate: Option<Expression>,
+        outer: bool,
+    },
+    Nothing,
 }
 
 impl Node {
@@ -84,4 +100,14 @@ impl Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.format("".into(), true, true))
     }
+}
+
+/// An aggregate operation
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub enum Aggregate {
+    Average,
+    Count,
+    Max,
+    Min,
+    Sum,
 }

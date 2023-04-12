@@ -6,7 +6,7 @@ use crate::sql::schema::Table;
 use crate::sql::schema::{Catalog, Column};
 use crate::sql::parser::ast;
 
-use super::{Plan, Node};
+use super::{Plan, Node, Aggregate};
 
 /// A query plan builder.
 pub struct Planner<'a, C: Catalog> {
@@ -80,6 +80,92 @@ impl<'a, C: Catalog> Planner<'a, C> {
                     })
                     .collect::<Result<_>>()?,
             },
+            // TODO: Read.
+            ast::Statement::Select {
+                mut select,
+                from,
+                r#where,
+                group_by,
+                mut having,
+                mut order,
+                offset,
+                limit,
+            } => {
+                let environment = &mut Environment::new();
+
+                // Build the FROM clause.
+                let mut node = match (from.is_empty(), select.is_empty()) {
+                    (false, _) => self.build_from_clause(environment, from)?,
+                    (true, false) => Node::Nothing,
+                    (true, true) => return Err(Error::Value("Can't select * without a table".into())),
+                };
+
+                // Build the WHERE clause.
+                if let Some(expr) = r#where {
+                    node = Node::Filter {
+                        source: Box::new(node),
+                        predicate: self.build_expression(environment, expr)?,
+                    };
+                }
+
+                // Build the SELECT clause.
+                let mut hidden = 0;
+                if !select.is_empty() {
+                    // Inject hidden SELECT columns for fields and aggregates used in ORDER BY and
+                    // HAVING expressions but not present in existing SELECT output. These will be
+                    // removed again by a later projection.
+                    
+                    // if let Some(ref mut expr) = having {
+                    //     hidden += self.inject_hidden(expr, &mut select)?;
+                    // }
+                    // for (expr, _) in order.iter_mut() {
+                    //     hidden += self.inject_hidden(expr, &mut select)?;
+                    // }
+
+                    // Extract any aggregate functions and GROUP BY expressions, replacing them with
+                    // Column placeholders. Aggregations are handled by evaluating group expressions
+                    // and aggregate function arguments in a pre-projection, passing the results
+                    // to an aggregation node, and then evaluating the final SELECT expressions
+                    // in the post-projection. For example:
+                    //
+                    // SELECT (MAX(rating * 100) - MIN(rating * 100)) / 100
+                    // FROM movies
+                    // GROUP BY released - 2000
+                    //
+                    // Results in the following nodes:
+                    //
+                    // - Projection: rating * 100, rating * 100, released - 2000
+                    // - Aggregation: max(#0), min(#1) group by #2
+                    // - Projection: (#0 - #1) / 100
+
+                    // let aggregates = self.extract_aggregates(&mut select)?;
+                    // let groups = self.extract_groups(&mut select, group_by, aggregates.len())?;
+                    // if !aggregates.is_empty() || !groups.is_empty() {
+                    //     node = self.build_aggregation(environment, node, groups, aggregates)?;
+                    // }
+
+                    // Build the remaining non-aggregate projection.
+
+                    // let expressions: Vec<(Expression, Option<String>)> = select
+                    //     .into_iter()
+                    //     .map(|(e, l)| Ok((self.build_expression(environment, e)?, l)))
+                    //     .collect::<Result<_>>()?;
+                    // environment.project(&expressions)?;
+                    // node = Node::Projection { source: Box::new(node), expressions };
+                };
+
+                // TODO: Build HAVING clause.
+
+                // TODO: Build ORDER clause.
+
+                // TODO: Build OFFSET clause.
+
+                // TODO: Build LIMIT clause.
+
+                // TODO: Remove any hidden columns.
+
+                node
+            },
             ast::Statement::Update { table, set, r#where } => {
                 let environment = &mut Environment::from_table(
                     self.catalog.assert_read_table(&table)?
@@ -121,6 +207,126 @@ impl<'a, C: Catalog> Planner<'a, C> {
                 }
             }
         })
+    }
+
+    /// Builds a FROM clause consisting of several items. Each item is either a single table or a
+    /// join of an arbitrary number of tables. All of the items are joined, since e.g. 'SELECT * FROM
+    /// a, b' is an implicit join of a and b.
+    fn build_from_clause(&self, environment: &mut Environment, from: Vec<ast::FromItem>) -> Result<Node> {
+        let base_scope = environment.clone();
+        let mut items = from.into_iter();
+        let mut node = match items.next() {
+            Some(item) => self.build_from_item(environment, item)?,
+            None => return Err(Error::Value("No from items given".into())),
+        };
+        for item in items {
+            let mut right_scope = base_scope.clone();
+            let right = self.build_from_item(&mut right_scope, item)?;
+            node = Node::NestedLoopJoin {
+                left: Box::new(node),
+                left_size: environment.len(),
+                right: Box::new(right),
+                predicate: None,
+                outer: false,
+            };
+            environment.merge(right_scope)?;
+        }
+        Ok(node)
+    }
+
+    /// Builds FROM items, which can either be a single table or a chained join of multiple tables,
+    /// e.g. 'SELECT * FROM a LEFT JOIN b ON b.a_id = a.id'. Any tables will be stored in
+    /// self.tables keyed by their query name (i.e. alias if given, otherwise name). The table can
+    /// only be referenced by the query name (so if alias is given, cannot reference by name).
+    fn build_from_item(&self, environment: &mut Environment, item: ast::FromItem) -> Result<Node> {
+        Ok(match item {
+            ast::FromItem::Table { name, alias } => {
+                environment.add_table(
+                    alias.clone().unwrap_or_else(|| name.clone()),
+                    self.catalog.assert_read_table(&name)?,
+                )?;
+                Node::Scan { table: name, alias, filter: None }
+            }
+
+            ast::FromItem::Join { left, right, r#type, predicate } => {
+                // Right outer joins are built as a left outer join with an additional projection
+                // to swap the resulting columns.
+                let (left, right) = match r#type {
+                    ast::JoinType::Right => (right, left),
+                    _ => (left, right),
+                };
+                let left = Box::new(self.build_from_item(environment, *left)?);
+                let left_size = environment.len();
+                let right = Box::new(self.build_from_item(environment, *right)?);
+                let predicate = predicate.map(|e| self.build_expression(environment, e)).transpose()?;
+                let outer = match r#type {
+                    ast::JoinType::Cross | ast::JoinType::Inner => false,
+                    ast::JoinType::Left | ast::JoinType::Right => true,
+                };
+                let mut node = Node::NestedLoopJoin { left, left_size, right, predicate, outer };
+                if matches!(r#type, ast::JoinType::Right) {
+                    let expressions = (left_size..environment.len())
+                        .chain(0..left_size)
+                        .map(|i| Ok((Expression::Field(i, environment.get_label(i)?), None)))
+                        .collect::<Result<Vec<_>>>()?;
+                    environment.project(&expressions)?;
+                    node = Node::Projection { source: Box::new(node), expressions }
+                }
+                node
+            }
+        })
+    }
+
+    /// Injects hidden expressions into SELECT expressions. This is used for ORDER BY and HAVING, in
+    /// order to apply these to fields or aggregates that are not present in the SELECT output, e.g.
+    /// to order on a column that is not selected. This is done by replacing the relevant parts of
+    /// the given expression with Column references to either existing columns or new, hidden
+    /// columns in the select expressions. Returns the number of hidden columns added.
+    fn inject_hidden(
+        &self,
+        expr: &mut ast::Expression,
+        select: &mut Vec<(ast::Expression, Option<String>)>,
+    ) -> Result<usize> {
+        todo!()
+    }
+
+    /// Extracts aggregate functions from an AST expression tree. This finds the aggregate
+    /// function calls, replaces them with ast::Expression::Column(i), maps the aggregate functions
+    /// to aggregates, and returns them along with their argument expressions.
+    fn extract_aggregates(
+        &self,
+        exprs: &mut [(ast::Expression, Option<String>)],
+    ) -> Result<Vec<(Aggregate, ast::Expression)>> {
+        todo!()
+    }
+
+    /// Extracts group by expressions, and replaces them with column references with the given
+    /// offset. These can be either an arbitray expression, a reference to a SELECT column, or the
+    /// same expression as a SELECT column. The following are all valid:
+    ///
+    /// SELECT released / 100 AS century, COUNT(*) FROM movies GROUP BY century
+    /// SELECT released / 100, COUNT(*) FROM movies GROUP BY released / 100
+    /// SELECT COUNT(*) FROM movies GROUP BY released / 100
+    fn extract_groups(
+        &self,
+        exprs: &mut Vec<(ast::Expression, Option<String>)>,
+        group_by: Vec<ast::Expression>,
+        offset: usize,
+    ) -> Result<Vec<(ast::Expression, Option<String>)>> {
+        todo!()
+    }
+
+    /// Builds an aggregation node. All aggregate parameters and GROUP BY expressions are evaluated
+    /// in a pre-projection, whose results are fed into an Aggregate node. This node computes the
+    /// aggregates for the given groups, passing the group values through directly.
+    fn build_aggregation(
+        &self,
+        environment: &mut Environment,
+        source: Node,
+        groups: Vec<(ast::Expression, Option<String>)>,
+        aggregations: Vec<(Aggregate, ast::Expression)>,
+    ) -> Result<Node> {
+        todo!()
     }
 
     /// Builds an expression from an AST expression. TODO: Read.
@@ -319,9 +525,47 @@ impl Environment {
         Ok(())
     }
 
+    /// Merges two scopes, by appending the given scope to self.
+    fn merge(&mut self, scope: Environment) -> Result<()> {
+        if self.is_constant {
+            return Err(Error::Internal("Can't modify constant scope".into()));
+        }
+        for (label, table) in scope.tables {
+            if self.tables.contains_key(&label) {
+                return Err(Error::Value(format!("Duplicate table name {}", label)));
+            }
+            self.tables.insert(label, table);
+        }
+        for (table, label) in scope.columns {
+            self.add_column(table, label);
+        }
+        Ok(())
+    }
+
     /// Resolves a name, optionally qualified by a table name.
     fn resolve(&self, table: Option<&str>, name: &str) -> Result<usize> {
-        todo!()
+        if self.is_constant {
+            return Err(Error::Value(format!(
+                "Expression must be constant, found field {}",
+                if let Some(table) = table { format!("{}.{}", table, name) } else { name.into() }
+            )));
+        }
+        if let Some(table) = table {
+            if !self.tables.contains_key(table) {
+                return Err(Error::Value(format!("Unknown table {}", table)));
+            }
+            self.qualified
+                .get(&(table.into(), name.into()))
+                .copied()
+                .ok_or_else(|| Error::Value(format!("Unknown field {}.{}", table, name)))
+        } else if self.ambiguous.contains(name) {
+            Err(Error::Value(format!("Ambiguous field {}", name)))
+        } else {
+            self.unqualified
+                .get(name)
+                .copied()
+                .ok_or_else(|| Error::Value(format!("Unknown field {}", name)))
+        }
     }
 
     /// Fetches a column from the scope by index. TODO: Read.
@@ -344,5 +588,16 @@ impl Environment {
             (table, Some(name)) => Some((table, name)),
             _ => None,
         })
+    }
+
+    /// Number of columns in the current scope.
+    fn len(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Projects the scope. This takes a set of expressions and labels in the current scope,
+    /// and returns a new scope for the projection.
+    fn project(&mut self, projection: &[(Expression, Option<String>)]) -> Result<()> {
+        todo!()
     }
 }
