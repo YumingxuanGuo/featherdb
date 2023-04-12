@@ -20,9 +20,11 @@ impl Scan {
 impl<T: SqlTxn> Executor<T> for Scan {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         let table = txn.assert_read_table(&self.table)?;
+        // FIXME: Try txn.scan() only once here.
         Ok(ResultSet::Query {
             columns: table.columns.iter().map(|c| ResColumn { name: Some(c.name.clone()) }).collect(),
-            rows: Box::new(txn.scan(&table.name, self.filter)?),
+            rows: Box::new(txn.scan(&table.name, self.filter.clone())?),
+            buffered_rows: txn.scan(&table.name, self.filter)?.collect::<Result<_>>()?,
         })
     }
 }
@@ -43,7 +45,7 @@ impl<T: SqlTxn> Executor<T> for KeyLookupExec {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         let table = txn.assert_read_table(&self.table)?;
 
-        // FIXME Is there a way to pass the txn into an iterator closure instead?
+        // FIXME: Is there a way to pass the txn into an iterator closure instead?
         let rows = self
             .keys
             .into_iter()
@@ -52,7 +54,8 @@ impl<T: SqlTxn> Executor<T> for KeyLookupExec {
 
         Ok(ResultSet::Query {
             columns: table.columns.iter().map(|c| ResColumn { name: Some(c.name.clone()) }).collect(),
-            rows: Box::new(rows.into_iter().map(Ok)),
+            rows: Box::new(rows.clone().into_iter().map(Ok)),
+            buffered_rows: rows,
         })
     }
 }
