@@ -230,7 +230,7 @@ impl SqlTxn for KvSqlTxn {
                     Ok(row) => match &filter {
                         Some(filter) => match filter.evaluate(Some(&row)) {
                             Ok(Value::Boolean(true)) => Some(Ok(row)),
-                            Ok(Value::Boolean(false)) => None,
+                            Ok(Value::Boolean(false)) | Ok(Value::Null) => None,
                             Ok(v) => Some(Err(Error::Value(format!(
                                 "Filter returned {}, expected boolean", v
                             )))),
