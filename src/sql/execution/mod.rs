@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
+mod join;
 mod mutation;
 mod query;
 mod schema;
@@ -12,6 +13,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use crate::concurrency::Mode;
 use crate::error::{Result, Error};
+use self::join::NestedLoopJoinExec;
 use self::mutation::{InsertExec, UpdateExec, DeleteExec};
 use self::query::FilterExec;
 use self::schema::{CreateTableExec, DropTableExec};
@@ -50,7 +52,9 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
             Node::Scan { table, filter, alias: _ } => Scan::new(table, filter),
             Node::Filter { source, predicate } => FilterExec::new(Self::build(*source), predicate),
             Node::Projection { source, expressions } => todo!(),
-            Node::NestedLoopJoin { left, left_size, right, predicate, outer } => todo!(),
+            Node::NestedLoopJoin { left, left_size, right, predicate, outer } => {
+                NestedLoopJoinExec::new(Self::build(*left), Self::build(*right), predicate, outer)
+            },
             Node::Nothing => todo!(),
         }
     }
