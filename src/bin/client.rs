@@ -125,7 +125,7 @@ impl FeatherClient {
                     ResultSet::CreateTable { name } => println!("  Created table {}", name),
                     ResultSet::DropTable { name } => println!("  Dropped table {}", name),
                     ResultSet::Explain(plan) => println!("{}", plan.to_string()),
-                    ResultSet::Query { columns, mut rows } => {
+                    ResultSet::Query { columns, buffered_rows, .. } => {
                         if self.show_headers {
                             println!(
                                 "  {}",
@@ -136,7 +136,8 @@ impl FeatherClient {
                                     .join("|")
                             );
                         }
-                        while let Some(row) = rows.next().transpose()? {
+                        let mut iter = buffered_rows.into_iter();
+                        while let Some(row) = iter.next() {
                             println!(
                                 "  {}",
                                 row.into_iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join("|")
