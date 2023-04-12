@@ -22,6 +22,16 @@ pub enum Statement {
         columns: Option<Vec<String>>,
         values: Vec<Vec<Expression>>,
     },
+    Select {
+        select: Vec<(Expression, Option<String>)>,
+        from: Vec<FromItem>,
+        r#where: Option<Expression>,
+        group_by: Vec<Expression>,
+        having: Option<Expression>,
+        order: Vec<(Expression, Order)>,
+        offset: Option<Expression>,
+        limit: Option<Expression>,
+    },
     Update {
         table: String,
         set: BTreeMap<String, Expression>,
@@ -31,6 +41,30 @@ pub enum Statement {
         table: String,
         r#where: Option<Expression>,
     },
+}
+
+/// A FROM item
+#[derive(Clone, Debug, PartialEq)]
+pub enum FromItem {
+    Table {
+        name: String,
+        alias: Option<String>,
+    },
+    Join {
+        left: Box<FromItem>,
+        right: Box<FromItem>,
+        r#type: JoinType,
+        predicate: Option<Expression>,
+    },
+}
+
+/// A JOIN type
+#[derive(Clone, Debug, PartialEq)]
+pub enum JoinType {
+    Cross,
+    Inner,
+    Left,
+    Right,
 }
 
 /// A column
@@ -44,6 +78,13 @@ pub struct Column {
     pub is_unique: bool,
     pub is_indexed: bool,
     pub references: Option<String>,
+}
+
+/// Sort orders
+#[derive(Clone, Debug, PartialEq)]
+pub enum Order {
+    Ascending,
+    Descending,
 }
 
 /// Expressions

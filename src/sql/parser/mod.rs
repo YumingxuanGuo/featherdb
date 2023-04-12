@@ -303,9 +303,26 @@ impl<'a> Parser<'a> {
         Ok(ast::Statement::Insert { table, columns, values })
     }
 
-    /// TODO: Parses a SELECT statement.
+    /// Parses a SELECT statement. TODO: Read all the clauses parsing.
     fn parse_statement_select(&mut self) -> Result<ast::Statement> {
-        todo!()
+        Ok(ast::Statement::Select {
+            select: self.parse_clause_select()?,
+            from: self.parse_clause_from()?,
+            r#where: self.parse_clause_where()?,
+            group_by: self.parse_clause_group_by()?,
+            having: self.parse_clause_having()?,
+            order: self.parse_clause_order()?,
+            limit: if self.next_if_token(Keyword::Limit.into()).is_some() {
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            },
+            offset: if self.next_if_token(Keyword::Offset.into()).is_some() {
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            },
+        })
     }
 
     /// Parses an UPDATE statement.
@@ -342,6 +359,152 @@ impl<'a> Parser<'a> {
     /// TODO: Parses an EXPLAIN statement.
     fn parse_statement_explain(&mut self) -> Result<ast::Statement> {
         todo!()
+    }
+
+    /// Parses a select clause
+    fn parse_clause_select(&mut self) -> Result<Vec<(ast::Expression, Option<String>)>> {
+        let mut select = Vec::new();
+        if self.next_if_token(Keyword::Select.into()).is_none() {
+            return Ok(select);
+        }
+        loop {
+            if self.next_if_token(Token::Symbol(Symbol::Asterisk)).is_some() && select.is_empty() {
+                break;
+            }
+            let expr = self.parse_expression(0)?;
+            let label = match self.peek()? {
+                Some(Token::Keyword(Keyword::As)) => {
+                    self.next()?;
+                    Some(self.next_identifier()?)
+                }
+                Some(Token::Identifier(_)) => Some(self.next_identifier()?),
+                _ => None,
+            };
+            select.push((expr, label));
+            if self.next_if_token(Token::Symbol(Symbol::Comma)).is_none() {
+                break;
+            }
+        }
+        Ok(select)
+    }
+
+    /// Parses a from clause
+    fn parse_clause_from(&mut self) -> Result<Vec<ast::FromItem>> {
+        let mut from = Vec::new();
+        if self.next_if_token(Keyword::From.into()).is_none() {
+            return Ok(from);
+        }
+        loop {
+            let mut item = self.parse_clause_from_item()?;
+            while let Some(jointype) = self.parse_clause_from_jointype()? {
+                let left = Box::new(item);
+                let right = Box::new(self.parse_clause_from_item()?);
+                let predicate = match &jointype {
+                    ast::JoinType::Cross => None,
+                    _ => {
+                        self.next_expect(Some(Keyword::On.into()))?;
+                        Some(self.parse_expression(0)?)
+                    }
+                };
+                let r#type = jointype;
+                item = ast::FromItem::Join { left, right, r#type, predicate };
+            }
+            from.push(item);
+            if self.next_if_token(Token::Symbol(Symbol::Comma)).is_none() {
+                break;
+            }
+        }
+        Ok(from)
+    }
+
+    /// Parses a from clause item
+    fn parse_clause_from_item(&mut self) -> Result<ast::FromItem> {
+        self.parse_clause_from_table()
+    }
+
+    // Parses a from clause table
+    fn parse_clause_from_table(&mut self) -> Result<ast::FromItem> {
+        let name = self.next_identifier()?;
+        let alias = if self.next_if_token(Keyword::As.into()).is_some() {
+            Some(self.next_identifier()?)
+        } else if let Some(Token::Identifier(_)) = self.peek()? {
+            Some(self.next_identifier()?)
+        } else {
+            None
+        };
+        Ok(ast::FromItem::Table { name, alias })
+    }
+
+    // Parses a from clause join type
+    fn parse_clause_from_jointype(&mut self) -> Result<Option<ast::JoinType>> {
+        if self.next_if_token(Keyword::Cross.into()).is_some() {
+            self.next_expect(Some(Keyword::Join.into()))?;
+            Ok(Some(ast::JoinType::Cross))
+        } else if self.next_if_token(Keyword::Inner.into()).is_some() {
+            self.next_expect(Some(Keyword::Join.into()))?;
+            Ok(Some(ast::JoinType::Inner))
+        } else if self.next_if_token(Keyword::Join.into()).is_some() {
+            Ok(Some(ast::JoinType::Inner))
+        } else if self.next_if_token(Keyword::Left.into()).is_some() {
+            self.next_if_token(Keyword::Outer.into());
+            self.next_expect(Some(Keyword::Join.into()))?;
+            Ok(Some(ast::JoinType::Left))
+        } else if self.next_if_token(Keyword::Right.into()).is_some() {
+            self.next_if_token(Keyword::Outer.into());
+            self.next_expect(Some(Keyword::Join.into()))?;
+            Ok(Some(ast::JoinType::Right))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parses a group by clause
+    fn parse_clause_group_by(&mut self) -> Result<Vec<ast::Expression>> {
+        let mut exprs = Vec::new();
+        if self.next_if_token(Keyword::Group.into()).is_none() {
+            return Ok(exprs);
+        }
+        self.next_expect(Some(Keyword::By.into()))?;
+        loop {
+            exprs.push(self.parse_expression(0)?);
+            if self.next_if_token(Token::Symbol(Symbol::Comma)).is_none() {
+                break;
+            }
+        }
+        Ok(exprs)
+    }
+
+    /// Parses a HAVING clause
+    fn parse_clause_having(&mut self) -> Result<Option<ast::Expression>> {
+        if self.next_if_token(Keyword::Having.into()).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(self.parse_expression(0)?))
+    }
+
+    /// Parses an order clause
+    fn parse_clause_order(&mut self) -> Result<Vec<(ast::Expression, ast::Order)>> {
+        if self.next_if_token(Keyword::Order.into()).is_none() {
+            return Ok(Vec::new());
+        }
+        self.next_expect(Some(Keyword::By.into()))?;
+        let mut orders = Vec::new();
+        loop {
+            orders.push((
+                self.parse_expression(0)?,
+                if self.next_if_token(Keyword::Asc.into()).is_some() {
+                    ast::Order::Ascending
+                } else if self.next_if_token(Keyword::Desc.into()).is_some() {
+                    ast::Order::Descending
+                } else {
+                    ast::Order::Ascending
+                },
+            ));
+            if self.next_if_token(Token::Symbol(Symbol::Comma)).is_none() {
+                break;
+            }
+        }
+        Ok(orders)
     }
 
     /// Parses a WHERE clause.
