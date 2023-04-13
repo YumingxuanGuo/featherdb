@@ -21,7 +21,7 @@ impl<'a, C: Catalog> Planner<'a, C> {
 
     /// Builds a plan for a AST statement.
     pub fn build(&mut self, statement: ast::Statement) -> Result<Plan> {
-        Ok(Plan { node: self.build_statement(statement)? })
+        Ok(Plan(self.build_statement(statement)?))
     }
 
     /// Builds a plan node for a AST statement.
@@ -73,9 +73,9 @@ impl<'a, C: Catalog> Planner<'a, C> {
                     .map(|exprs| {
                         exprs
                             .into_iter()
-                            .map(|expr|
+                            .map(|expr| {
                                 self.build_expression(&mut Environment::constant(), expr)
-                            )
+                            })
                             .collect::<Result<_>>()
                     })
                     .collect::<Result<_>>()?,
@@ -213,15 +213,15 @@ impl<'a, C: Catalog> Planner<'a, C> {
     /// join of an arbitrary number of tables. All of the items are joined, since e.g. 'SELECT * FROM
     /// a, b' is an implicit join of a and b.
     fn build_from_clause(&self, environment: &mut Environment, from: Vec<ast::FromItem>) -> Result<Node> {
-        let base_scope = environment.clone();
+        let base_env = environment.clone();
         let mut items = from.into_iter();
         let mut node = match items.next() {
             Some(item) => self.build_from_item(environment, item)?,
             None => return Err(Error::Value("No from items given".into())),
         };
         for item in items {
-            let mut right_scope = base_scope.clone();
-            let right = self.build_from_item(&mut right_scope, item)?;
+            let mut right_env = base_env.clone();
+            let right = self.build_from_item(&mut right_env, item)?;
             node = Node::NestedLoopJoin {
                 left: Box::new(node),
                 left_size: environment.len(),
@@ -229,7 +229,7 @@ impl<'a, C: Catalog> Planner<'a, C> {
                 predicate: None,
                 outer: false,
             };
-            environment.merge(right_scope)?;
+            environment.merge(right_env)?;
         }
         Ok(node)
     }
