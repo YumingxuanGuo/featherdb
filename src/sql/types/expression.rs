@@ -1,3 +1,5 @@
+use std::fmt::{Display, self};
+
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 
@@ -255,5 +257,115 @@ impl Expression {
                 (lhs, rhs) => return Err(Error::Value(format!("Can't LIKE {} and {}", lhs, rhs))),
             },
         })
+    }
+    
+    /// Walks the expression tree while calling a closure. Returns true as soon as the closure
+    /// returns true. This is the inverse of walk().
+    pub fn contains<F: Fn(&Expression) -> bool>(&self, visitor: &F) -> bool {
+        !self.walk(&|e| !visitor(e))
+    }
+
+    /// Replaces the expression with result of the closure. Helper function for transform().
+    fn replace_with<F: Fn(Self) -> Result<Self>>(&mut self, f: F) -> Result<()> {
+        // Temporarily replace expression with a null value, in case closure panics. May consider
+        // replace_with crate if this hampers performance.
+        let expr = std::mem::replace(self, Expression::Constant(Value::Null));
+        *self = f(expr)?;
+        Ok(())
+    }
+
+    /// Walks the expression tree, calling a closure for every node. Halts if closure returns false.
+    pub fn walk<F: Fn(&Expression) -> bool>(&self, visitor: &F) -> bool {
+        visitor(self)
+            && match self {
+                Self::Add(lhs, rhs)
+                | Self::And(lhs, rhs)
+                | Self::Divide(lhs, rhs)
+                | Self::Equal(lhs, rhs)
+                | Self::Exponentiate(lhs, rhs)
+                | Self::GreaterThan(lhs, rhs)
+                | Self::LessThan(lhs, rhs)
+                | Self::Like(lhs, rhs)
+                | Self::Modulo(lhs, rhs)
+                | Self::Multiply(lhs, rhs)
+                | Self::Or(lhs, rhs)
+                | Self::Subtract(lhs, rhs) => lhs.walk(visitor) && rhs.walk(visitor),
+
+                Self::Assert(expr)
+                | Self::Factorial(expr)
+                | Self::IsNull(expr)
+                | Self::Negate(expr)
+                | Self::Not(expr) => expr.walk(visitor),
+
+                Self::Constant(_) | Self::Field(_, _) => true,
+            }
+    }
+
+    /// Transforms the expression tree by applying a closure before and after descending.
+    pub fn transform<B, A>(mut self, before: &B, after: &A) -> Result<Self>
+    where
+        B: Fn(Self) -> Result<Self>,
+        A: Fn(Self) -> Result<Self>,
+    {
+        self = before(self)?;
+        match &mut self {
+            Self::Add(lhs, rhs)
+            | Self::And(lhs, rhs)
+            | Self::Divide(lhs, rhs)
+            | Self::Equal(lhs, rhs)
+            | Self::Exponentiate(lhs, rhs)
+            | Self::GreaterThan(lhs, rhs)
+            | Self::LessThan(lhs, rhs)
+            | Self::Like(lhs, rhs)
+            | Self::Modulo(lhs, rhs)
+            | Self::Multiply(lhs, rhs)
+            | Self::Or(lhs, rhs)
+            | Self::Subtract(lhs, rhs) => {
+                Self::replace_with(lhs, |e| e.transform(before, after))?;
+                Self::replace_with(rhs, |e| e.transform(before, after))?;
+            }
+
+            Self::Assert(expr)
+            | Self::Factorial(expr)
+            | Self::IsNull(expr)
+            | Self::Negate(expr)
+            | Self::Not(expr) => Self::replace_with(expr, |e| e.transform(before, after))?,
+
+            Self::Constant(_) | Self::Field(_, _) => {}
+        };
+        after(self)
+    }
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Constant(v) => v.to_string(),
+            Self::Field(i, None) => format!("#{}", i),
+            Self::Field(_, Some((None, name))) => name.to_string(),
+            Self::Field(_, Some((Some(table), name))) => format!("{}.{}", table, name),
+
+            Self::And(lhs, rhs) => format!("{} AND {}", lhs, rhs),
+            Self::Or(lhs, rhs) => format!("{} OR {}", lhs, rhs),
+            Self::Not(expr) => format!("NOT {}", expr),
+
+            Self::Equal(lhs, rhs) => format!("{} = {}", lhs, rhs),
+            Self::GreaterThan(lhs, rhs) => format!("{} > {}", lhs, rhs),
+            Self::LessThan(lhs, rhs) => format!("{} < {}", lhs, rhs),
+            Self::IsNull(expr) => format!("{} IS NULL", expr),
+
+            Self::Add(lhs, rhs) => format!("{} + {}", lhs, rhs),
+            Self::Assert(expr) => expr.to_string(),
+            Self::Divide(lhs, rhs) => format!("{} / {}", lhs, rhs),
+            Self::Exponentiate(lhs, rhs) => format!("{} ^ {}", lhs, rhs),
+            Self::Factorial(expr) => format!("!{}", expr),
+            Self::Modulo(lhs, rhs) => format!("{} % {}", lhs, rhs),
+            Self::Multiply(lhs, rhs) => format!("{} * {}", lhs, rhs),
+            Self::Negate(expr) => format!("-{}", expr),
+            Self::Subtract(lhs, rhs) => format!("{} - {}", lhs, rhs),
+
+            Self::Like(lhs, rhs) => format!("{} LIKE {}", lhs, rhs),
+        };
+        write!(f, "{}", s)
     }
 }
