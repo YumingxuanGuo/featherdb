@@ -21,14 +21,12 @@ impl std::error::Error for Error {}
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Config(s) => write!(f, "[Config] {}", s),
-            Error::Internal(s) => write!(f, "[Internal] {}", s),
-            Error::Parse(s) => write!(f, "[Parse] {}", s),
-            Error::Value(s) => write!(f, "[Value] {}", s),
-
-            Error::Abort => write!(f, "[Abort] Operation aborted"),
-            Error::ReadOnly => write!(f, "[ReadOnly] Read-only transaction"),
-            Error::Serialization => write!(f, "[Serialization] Serialization failure, retry transaction"),
+            Error::Config(s) | Error::Internal(s) | Error::Parse(s) | Error::Value(s) => {
+                write!(f, "{}", s)
+            }
+            Error::Abort => write!(f, "Operation aborted"),
+            Error::Serialization => write!(f, "Serialization failure, retry transaction"),
+            Error::ReadOnly => write!(f, "Read-only transaction"),
         }
     }
 }
@@ -161,6 +159,15 @@ impl From<tonic::Status> for Error {
 
 impl From<Error> for tonic::Status {
     fn from(err: Error) -> Self {
-        tonic::Status::internal(err.to_string())
+        let msg = match err {
+            Error::Config(s) => format!("[Config] {}", s),
+            Error::Internal(s) => format!("[Internal] {}", s),
+            Error::Parse(s) => format!("[Parse] {}", s),
+            Error::Value(s) => format!("[Value] {}", s),
+            Error::Abort => format!("[Abort] Operation aborted"),
+            Error::ReadOnly => format!("[ReadOnly] Read-only transaction"),
+            Error::Serialization => format!("[Serialization] Serialization failure, retry transaction"),
+        };
+        tonic::Status::internal(msg)
     }
 }
