@@ -1,0 +1,188 @@
+Query: SELECT * FROM movies m INNER JOIN genres g ON m.genre_id = g.id WHERE g.id = 4
+
+Explain:
+HashJoin: inner on m.genre_id = g.id
+├─ IndexLookup: movies as m column genre_id (4)
+└─ KeyLookup: genres as g (4)
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd", "id", "name"]
+
+AST: Select {
+    select: [],
+    from: [
+        Join {
+            left: Table {
+                name: "movies",
+                alias: Some(
+                    "m",
+                ),
+            },
+            right: Table {
+                name: "genres",
+                alias: Some(
+                    "g",
+                ),
+            },
+            type: Inner,
+            predicate: Some(
+                Operation(
+                    Equal(
+                        Field(
+                            Some(
+                                "m",
+                            ),
+                            "genre_id",
+                        ),
+                        Field(
+                            Some(
+                                "g",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: Some(
+        Operation(
+            Equal(
+                Field(
+                    Some(
+                        "g",
+                    ),
+                    "id",
+                ),
+                Literal(
+                    Integer(
+                        4,
+                    ),
+                ),
+            ),
+        ),
+    ),
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Filter {
+        source: NestedLoopJoin {
+            left: Scan {
+                table: "movies",
+                alias: Some(
+                    "m",
+                ),
+                filter: None,
+            },
+            left_size: 7,
+            right: Scan {
+                table: "genres",
+                alias: Some(
+                    "g",
+                ),
+                filter: None,
+            },
+            predicate: Some(
+                Equal(
+                    Field(
+                        3,
+                        Some(
+                            (
+                                Some(
+                                    "m",
+                                ),
+                                "genre_id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "g",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            outer: false,
+        },
+        predicate: Equal(
+            Field(
+                7,
+                Some(
+                    (
+                        Some(
+                            "g",
+                        ),
+                        "id",
+                    ),
+                ),
+            ),
+            Constant(
+                Integer(
+                    4,
+                ),
+            ),
+        ),
+    },
+)
+
+Optimized plan: Plan(
+    HashJoin {
+        left: IndexLookup {
+            table: "movies",
+            alias: Some(
+                "m",
+            ),
+            column: "genre_id",
+            values: [
+                Integer(
+                    4,
+                ),
+            ],
+        },
+        left_field: (
+            3,
+            Some(
+                (
+                    Some(
+                        "m",
+                    ),
+                    "genre_id",
+                ),
+            ),
+        ),
+        right: KeyLookup {
+            table: "genres",
+            alias: Some(
+                "g",
+            ),
+            keys: [
+                Integer(
+                    4,
+                ),
+            ],
+        },
+        right_field: (
+            0,
+            Some(
+                (
+                    Some(
+                        "g",
+                    ),
+                    "id",
+                ),
+            ),
+        ),
+        outer: false,
+    },
+)
+

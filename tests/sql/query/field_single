@@ -1,0 +1,90 @@
+Query: SELECT id FROM movies
+
+Explain:
+Projection: id
+└─ Scan: movies
+
+Result: ["id"]
+[Integer(1)]
+[Integer(2)]
+[Integer(3)]
+[Integer(4)]
+[Integer(5)]
+[Integer(6)]
+[Integer(7)]
+[Integer(8)]
+[Integer(9)]
+[Integer(10)]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                None,
+                "id",
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "id",
+                        ),
+                    ),
+                ),
+                None,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "id",
+                        ),
+                    ),
+                ),
+                None,
+            ),
+        ],
+    },
+)
+

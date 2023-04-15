@@ -1,0 +1,12 @@
+Query: CREATE TABLE other (id INTEGER PRIMARY KEY, test_id INTEGER REFERENCES test)
+Result: CreateTable { name: "other" }
+
+Storage:
+CREATE TABLE other (
+  id INTEGER PRIMARY KEY,
+  test_id INTEGER DEFAULT NULL REFERENCES test
+)
+
+CREATE TABLE test (
+  id INTEGER PRIMARY KEY
+)

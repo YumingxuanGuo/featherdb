@@ -1,0 +1,187 @@
+Query: SELECT SUM(rating * 10) / COUNT(*) FROM movies
+
+Explain:
+Projection: #0 / #1
+└─ Aggregation: sum, count
+   └─ Projection: rating * 10, TRUE
+      └─ Scan: movies
+
+Result: ["?"]
+[Float(77.8)]
+
+AST: Select {
+    select: [
+        (
+            Operation(
+                Divide(
+                    Function(
+                        "sum",
+                        [
+                            Operation(
+                                Multiply(
+                                    Field(
+                                        None,
+                                        "rating",
+                                    ),
+                                    Literal(
+                                        Integer(
+                                            10,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ],
+                    ),
+                    Function(
+                        "count",
+                        [
+                            Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Aggregation {
+            source: Projection {
+                source: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                expressions: [
+                    (
+                        Multiply(
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            Constant(
+                                Integer(
+                                    10,
+                                ),
+                            ),
+                        ),
+                        None,
+                    ),
+                    (
+                        Constant(
+                            Boolean(
+                                true,
+                            ),
+                        ),
+                        None,
+                    ),
+                ],
+            },
+            aggregates: [
+                Sum,
+                Count,
+            ],
+        },
+        expressions: [
+            (
+                Divide(
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Field(
+                        1,
+                        None,
+                    ),
+                ),
+                None,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Aggregation {
+            source: Projection {
+                source: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                expressions: [
+                    (
+                        Multiply(
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            Constant(
+                                Integer(
+                                    10,
+                                ),
+                            ),
+                        ),
+                        None,
+                    ),
+                    (
+                        Constant(
+                            Boolean(
+                                true,
+                            ),
+                        ),
+                        None,
+                    ),
+                ],
+            },
+            aggregates: [
+                Sum,
+                Count,
+            ],
+        },
+        expressions: [
+            (
+                Divide(
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Field(
+                        1,
+                        None,
+                    ),
+                ),
+                None,
+            ),
+        ],
+    },
+)
+

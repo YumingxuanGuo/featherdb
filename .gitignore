@@ -1,5 +1,5 @@
 /target
 /data
 /src_old
-check_lines.sh
-push.sh
+lines.sh
+commit.sh

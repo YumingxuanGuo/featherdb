@@ -1,0 +1,210 @@
+Query: SELECT 1, 2 b, 3 AS c, 4 AS "👋", id AS "some id" FROM movies
+
+Explain:
+Projection: 1, 2, 3, 4, id
+└─ Scan: movies
+
+Result: ["?", "b", "c", "👋", "some id"]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(1)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(2)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(3)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(4)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(5)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(6)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(7)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(8)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(9)]
+[Integer(1), Integer(2), Integer(3), Integer(4), Integer(10)]
+
+AST: Select {
+    select: [
+        (
+            Literal(
+                Integer(
+                    1,
+                ),
+            ),
+            None,
+        ),
+        (
+            Literal(
+                Integer(
+                    2,
+                ),
+            ),
+            Some(
+                "b",
+            ),
+        ),
+        (
+            Literal(
+                Integer(
+                    3,
+                ),
+            ),
+            Some(
+                "c",
+            ),
+        ),
+        (
+            Literal(
+                Integer(
+                    4,
+                ),
+            ),
+            Some(
+                "👋",
+            ),
+        ),
+        (
+            Field(
+                None,
+                "id",
+            ),
+            Some(
+                "some id",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        expressions: [
+            (
+                Constant(
+                    Integer(
+                        1,
+                    ),
+                ),
+                None,
+            ),
+            (
+                Constant(
+                    Integer(
+                        2,
+                    ),
+                ),
+                Some(
+                    "b",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        3,
+                    ),
+                ),
+                Some(
+                    "c",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        4,
+                    ),
+                ),
+                Some(
+                    "👋",
+                ),
+            ),
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "some id",
+                ),
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        expressions: [
+            (
+                Constant(
+                    Integer(
+                        1,
+                    ),
+                ),
+                None,
+            ),
+            (
+                Constant(
+                    Integer(
+                        2,
+                    ),
+                ),
+                Some(
+                    "b",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        3,
+                    ),
+                ),
+                Some(
+                    "c",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        4,
+                    ),
+                ),
+                Some(
+                    "👋",
+                ),
+            ),
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "some id",
+                ),
+            ),
+        ],
+    },
+)
+

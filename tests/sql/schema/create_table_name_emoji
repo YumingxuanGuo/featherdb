@@ -1,0 +1,4 @@
+Query: CREATE TABLE 👋 (🆔 INTEGER PRIMARY KEY)
+Error: Parse("Unexpected character 👋")
+
+Storage:

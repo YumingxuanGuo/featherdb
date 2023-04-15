@@ -1,0 +1,87 @@
+Query: SELECT * FROM movies INNER JOIN genres ON FALSE
+
+Explain:
+NestedLoopJoin: inner
+├─ Scan: movies (FALSE)
+└─ Scan: genres
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd", "id", "name"]
+
+AST: Select {
+    select: [],
+    from: [
+        Join {
+            left: Table {
+                name: "movies",
+                alias: None,
+            },
+            right: Table {
+                name: "genres",
+                alias: None,
+            },
+            type: Inner,
+            predicate: Some(
+                Literal(
+                    Boolean(
+                        false,
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    NestedLoopJoin {
+        left: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        left_size: 7,
+        right: Scan {
+            table: "genres",
+            alias: None,
+            filter: None,
+        },
+        predicate: Some(
+            Constant(
+                Boolean(
+                    false,
+                ),
+            ),
+        ),
+        outer: false,
+    },
+)
+
+Optimized plan: Plan(
+    NestedLoopJoin {
+        left: Scan {
+            table: "movies",
+            alias: None,
+            filter: Some(
+                Constant(
+                    Boolean(
+                        false,
+                    ),
+                ),
+            ),
+        },
+        left_size: 7,
+        right: Scan {
+            table: "genres",
+            alias: None,
+            filter: None,
+        },
+        predicate: None,
+        outer: false,
+    },
+)
+

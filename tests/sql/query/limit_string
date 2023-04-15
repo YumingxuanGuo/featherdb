@@ -1,0 +1,27 @@
+Query: SELECT * FROM movies LIMIT 'abc'
+
+Error: Invalid limit abc
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: Some(
+        Literal(
+            String(
+                "abc",
+            ),
+        ),
+    ),
+}
+
+Plan: Value("Invalid limit abc")

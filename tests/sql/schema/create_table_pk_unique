@@ -1,0 +1,7 @@
+Query: CREATE TABLE name (id INTEGER PRIMARY KEY UNIQUE)
+Result: CreateTable { name: "name" }
+
+Storage:
+CREATE TABLE name (
+  id INTEGER PRIMARY KEY
+)

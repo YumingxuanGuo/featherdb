@@ -1,0 +1,40 @@
+Query: SELECT COUNT(*) FROM movies GROUP BY unknown
+
+Error: Unknown field unknown
+
+AST: Select {
+    select: [
+        (
+            Function(
+                "count",
+                [
+                    Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                ],
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "unknown",
+        ),
+    ],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Unknown field unknown")

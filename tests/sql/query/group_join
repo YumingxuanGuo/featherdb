@@ -1,0 +1,339 @@
+Query: SELECT s.name, COUNT(*) FROM movies m JOIN studios s ON m.studio_id = s.id GROUP BY s.name ORDER BY s.name ASC
+
+Explain:
+Order: s.name asc
+└─ Projection: s.name, #0
+   └─ Aggregation: count
+      └─ Projection: TRUE, s.name
+         └─ HashJoin: inner on m.studio_id = s.id
+            ├─ Scan: movies as m
+            └─ Scan: studios as s
+
+Result: ["name", "?"]
+[String("Lionsgate"), Integer(2)]
+[String("Mosfilm"), Integer(2)]
+[String("StudioCanal"), Integer(1)]
+[String("Warner Bros"), Integer(5)]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "s",
+                ),
+                "name",
+            ),
+            None,
+        ),
+        (
+            Function(
+                "count",
+                [
+                    Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                ],
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Join {
+            left: Table {
+                name: "movies",
+                alias: Some(
+                    "m",
+                ),
+            },
+            right: Table {
+                name: "studios",
+                alias: Some(
+                    "s",
+                ),
+            },
+            type: Inner,
+            predicate: Some(
+                Operation(
+                    Equal(
+                        Field(
+                            Some(
+                                "m",
+                            ),
+                            "studio_id",
+                        ),
+                        Field(
+                            Some(
+                                "s",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            Some(
+                "s",
+            ),
+            "name",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                Some(
+                    "s",
+                ),
+                "name",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: NestedLoopJoin {
+                        left: Scan {
+                            table: "movies",
+                            alias: Some(
+                                "m",
+                            ),
+                            filter: None,
+                        },
+                        left_size: 7,
+                        right: Scan {
+                            table: "studios",
+                            alias: Some(
+                                "s",
+                            ),
+                            filter: None,
+                        },
+                        predicate: Some(
+                            Equal(
+                                Field(
+                                    2,
+                                    Some(
+                                        (
+                                            Some(
+                                                "m",
+                                            ),
+                                            "studio_id",
+                                        ),
+                                    ),
+                                ),
+                                Field(
+                                    7,
+                                    Some(
+                                        (
+                                            Some(
+                                                "s",
+                                            ),
+                                            "id",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        outer: false,
+                    },
+                    expressions: [
+                        (
+                            Constant(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                8,
+                                Some(
+                                    (
+                                        Some(
+                                            "s",
+                                        ),
+                                        "name",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Count,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                Some(
+                                    "s",
+                                ),
+                                "name",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "s",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: HashJoin {
+                        left: Scan {
+                            table: "movies",
+                            alias: Some(
+                                "m",
+                            ),
+                            filter: None,
+                        },
+                        left_field: (
+                            2,
+                            Some(
+                                (
+                                    Some(
+                                        "m",
+                                    ),
+                                    "studio_id",
+                                ),
+                            ),
+                        ),
+                        right: Scan {
+                            table: "studios",
+                            alias: Some(
+                                "s",
+                            ),
+                            filter: None,
+                        },
+                        right_field: (
+                            0,
+                            Some(
+                                (
+                                    Some(
+                                        "s",
+                                    ),
+                                    "id",
+                                ),
+                            ),
+                        ),
+                        outer: false,
+                    },
+                    expressions: [
+                        (
+                            Constant(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                8,
+                                Some(
+                                    (
+                                        Some(
+                                            "s",
+                                        ),
+                                        "name",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Count,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                Some(
+                                    "s",
+                                ),
+                                "name",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "s",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

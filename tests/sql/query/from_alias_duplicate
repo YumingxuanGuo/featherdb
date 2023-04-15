@@ -1,0 +1,29 @@
+Query: SELECT * FROM movies a, genres a
+
+Error: Duplicate table name a
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: Some(
+                "a",
+            ),
+        },
+        Table {
+            name: "genres",
+            alias: Some(
+                "a",
+            ),
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Duplicate table name a")

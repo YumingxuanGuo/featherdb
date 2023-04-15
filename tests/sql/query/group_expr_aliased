@@ -1,0 +1,257 @@
+Query: SELECT studio_id * 2 AS twice, MAX(rating) FROM movies GROUP BY twice ORDER BY twice
+
+Explain:
+Order: twice asc
+└─ Projection: twice, #0
+   └─ Aggregation: maximum
+      └─ Projection: rating, studio_id * 2
+         └─ Scan: movies
+
+Result: ["twice", "?"]
+[Integer(2), Float(8.2)]
+[Integer(4), Float(7.6)]
+[Integer(6), Float(6.9)]
+[Integer(8), Float(8.8)]
+
+AST: Select {
+    select: [
+        (
+            Operation(
+                Multiply(
+                    Field(
+                        None,
+                        "studio_id",
+                    ),
+                    Literal(
+                        Integer(
+                            2,
+                        ),
+                    ),
+                ),
+            ),
+            Some(
+                "twice",
+            ),
+        ),
+        (
+            Function(
+                "max",
+                [
+                    Field(
+                        None,
+                        "rating",
+                    ),
+                ],
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "twice",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "twice",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Multiply(
+                                Field(
+                                    2,
+                                    Some(
+                                        (
+                                            None,
+                                            "studio_id",
+                                        ),
+                                    ),
+                                ),
+                                Constant(
+                                    Integer(
+                                        2,
+                                    ),
+                                ),
+                            ),
+                            Some(
+                                "twice",
+                            ),
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                None,
+                                "twice",
+                            ),
+                        ),
+                    ),
+                    Some(
+                        "twice",
+                    ),
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "twice",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Multiply(
+                                Field(
+                                    2,
+                                    Some(
+                                        (
+                                            None,
+                                            "studio_id",
+                                        ),
+                                    ),
+                                ),
+                                Constant(
+                                    Integer(
+                                        2,
+                                    ),
+                                ),
+                            ),
+                            Some(
+                                "twice",
+                            ),
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                None,
+                                "twice",
+                            ),
+                        ),
+                    ),
+                    Some(
+                        "twice",
+                    ),
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "twice",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

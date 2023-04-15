@@ -1,0 +1,15 @@
+Query: INSERT INTO test VALUES (1, 'a', 100, NULL)
+Error: Value("Invalid row size for table test")
+
+Storage:
+CREATE TABLE other (
+  id INTEGER PRIMARY KEY
+)
+
+CREATE TABLE test (
+  id INTEGER PRIMARY KEY DEFAULT 0,
+  name STRING DEFAULT NULL INDEX,
+  value INTEGER DEFAULT NULL
+)
+
+Index test.name

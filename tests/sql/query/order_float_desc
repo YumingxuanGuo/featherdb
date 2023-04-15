@@ -1,0 +1,85 @@
+Query: SELECT * FROM floats ORDER BY value DESC
+
+Explain:
+Order: value desc
+└─ Scan: floats
+
+Result: ["id", "value"]
+[Integer(1), Float(3.14)]
+[Integer(4), Float(1.618)]
+[Integer(5), Float(0.0)]
+[Integer(2), Float(-2.718)]
+[Integer(3), Null]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "floats",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "value",
+            ),
+            Descending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Scan {
+            table: "floats",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Scan {
+            table: "floats",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+

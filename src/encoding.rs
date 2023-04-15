@@ -8,7 +8,7 @@
 //! f64:     Big-endian binary representation, with sign bit flipped if +, all flipped if -.
 //! Value:   Like above, with type prefix 0x00=Null 0x01=Boolean 0x02=Float 0x03=Integer 0x04=String
 
-use crate::error::{Error, Result};
+use crate::{error::{Error, Result}, sql::types::Value};
 // use crate::sql::types::Value;
 
 use std::convert::TryInto;
@@ -170,28 +170,28 @@ pub fn take_u64(bytes: &mut &[u8]) -> Result<u64> {
     Ok(n)
 }
 
-// /// Encodes a value, using the first byte for the value type and delegating to other encoders.
-// pub fn encode_value(value: &Value) -> Vec<u8> {
-//     match value {
-//         Value::Null => vec![0x00],
-//         Value::Boolean(b) => vec![0x01, encode_boolean(*b)],
-//         Value::Float(f) => [&[0x02][..], &encode_f64(*f)].concat(),
-//         Value::Integer(i) => [&[0x03][..], &encode_i64(*i)].concat(),
-//         Value::String(s) => [&[0x04][..], &encode_string(s)].concat(),
-//     }
-// }
+/// Encodes a value, using the first byte for the value type and delegating to other encoders.
+pub fn encode_value(value: &Value) -> Vec<u8> {
+    match value {
+        Value::Null => vec![0x00],
+        Value::Boolean(b) => vec![0x01, encode_boolean(*b)],
+        Value::Float(f) => [&[0x02][..], &encode_f64(*f)].concat(),
+        Value::Integer(i) => [&[0x03][..], &encode_i64(*i)].concat(),
+        Value::String(s) => [&[0x04][..], &encode_string(s)].concat(),
+    }
+}
 
-// /// Decodes a value from a slice and shrinks the slice.
-// pub fn take_value(bytes: &mut &[u8]) -> Result<Value> {
-//     match take_byte(bytes)? {
-//         0x00 => Ok(Value::Null),
-//         0x01 => Ok(Value::Boolean(take_boolean(bytes)?)),
-//         0x02 => Ok(Value::Float(take_f64(bytes)?)),
-//         0x03 => Ok(Value::Integer(take_i64(bytes)?)),
-//         0x04 => Ok(Value::String(take_string(bytes)?)),
-//         n => Err(Error::Internal(format!("Invalid value prefix {:x?}", n))),
-//     }
-// }
+/// Decodes a value from a slice and shrinks the slice.
+pub fn take_value(bytes: &mut &[u8]) -> Result<Value> {
+    match take_byte(bytes)? {
+        0x00 => Ok(Value::Null),
+        0x01 => Ok(Value::Boolean(take_boolean(bytes)?)),
+        0x02 => Ok(Value::Float(take_f64(bytes)?)),
+        0x03 => Ok(Value::Integer(take_i64(bytes)?)),
+        0x04 => Ok(Value::String(take_string(bytes)?)),
+        n => Err(Error::Internal(format!("Invalid value prefix {:x?}", n))),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -444,58 +444,58 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn encode_value() -> Result<()> {
-    //     use super::encode_value;
+    #[test]
+    fn encode_value() -> Result<()> {
+        use super::encode_value;
 
-    //     assert_eq!(encode_value(&Value::Null), vec![0x00]);
-    //     assert_eq!(encode_value(&Value::Boolean(false)), vec![0x01, 0x00]);
-    //     assert_eq!(encode_value(&Value::Boolean(true)), vec![0x01, 0x01]);
-    //     assert_eq!(
-    //         encode_value(&Value::Float(-0.0)),
-    //         vec![0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    //     );
-    //     assert_eq!(
-    //         encode_value(&Value::Integer(1024)),
-    //         vec![0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00]
-    //     );
-    //     assert_eq!(
-    //         encode_value(&Value::String("abc".into())),
-    //         vec![0x04, 0x61, 0x62, 0x63, 0x00, 0x00]
-    //     );
-    //     Ok(())
-    // }
+        assert_eq!(encode_value(&Value::Null), vec![0x00]);
+        assert_eq!(encode_value(&Value::Boolean(false)), vec![0x01, 0x00]);
+        assert_eq!(encode_value(&Value::Boolean(true)), vec![0x01, 0x01]);
+        assert_eq!(
+            encode_value(&Value::Float(-0.0)),
+            vec![0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+        );
+        assert_eq!(
+            encode_value(&Value::Integer(1024)),
+            vec![0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00]
+        );
+        assert_eq!(
+            encode_value(&Value::String("abc".into())),
+            vec![0x04, 0x61, 0x62, 0x63, 0x00, 0x00]
+        );
+        Ok(())
+    }
 
-    // #[test]
-    // fn take_value() -> Result<()> {
-    //     use super::take_value;
+    #[test]
+    fn take_value() -> Result<()> {
+        use super::take_value;
 
-    //     let mut bytes: &[u8] = &[];
-    //     assert!(take_value(&mut bytes).is_err());
+        let mut bytes: &[u8] = &[];
+        assert!(take_value(&mut bytes).is_err());
 
-    //     let mut bytes: &[u8] = &[0xaf];
-    //     assert!(take_value(&mut bytes).is_err());
+        let mut bytes: &[u8] = &[0xaf];
+        assert!(take_value(&mut bytes).is_err());
 
-    //     let mut bytes: &[u8] = &[0x00, 0xaf];
-    //     assert_eq!(take_value(&mut bytes)?, Value::Null);
-    //     assert_eq!(bytes, &[0xaf]);
+        let mut bytes: &[u8] = &[0x00, 0xaf];
+        assert_eq!(take_value(&mut bytes)?, Value::Null);
+        assert_eq!(bytes, &[0xaf]);
 
-    //     let mut bytes: &[u8] = &[0x01, 0x01, 0xaf];
-    //     assert_eq!(take_value(&mut bytes)?, Value::Boolean(true));
-    //     assert_eq!(bytes, &[0xaf]);
+        let mut bytes: &[u8] = &[0x01, 0x01, 0xaf];
+        assert_eq!(take_value(&mut bytes)?, Value::Boolean(true));
+        assert_eq!(bytes, &[0xaf]);
 
-    //     let mut bytes: &[u8] = &[0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xaf];
-    //     assert_eq!(take_value(&mut bytes)?, Value::Float(-0.0));
-    //     assert_eq!(bytes, &[0xaf]);
+        let mut bytes: &[u8] = &[0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xaf];
+        assert_eq!(take_value(&mut bytes)?, Value::Float(-0.0));
+        assert_eq!(bytes, &[0xaf]);
 
-    //     let mut bytes: &[u8] = &[0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0xaf];
-    //     assert_eq!(take_value(&mut bytes)?, Value::Integer(1024));
-    //     assert_eq!(bytes, &[0xaf]);
+        let mut bytes: &[u8] = &[0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0xaf];
+        assert_eq!(take_value(&mut bytes)?, Value::Integer(1024));
+        assert_eq!(bytes, &[0xaf]);
 
-    //     let mut bytes: &[u8] = &[0x04, 0x61, 0x62, 0x63, 0x00, 0x00, 0xaf];
-    //     assert_eq!(take_value(&mut bytes)?, Value::String("abc".into()));
-    //     assert_eq!(bytes, &[0xaf]);
+        let mut bytes: &[u8] = &[0x04, 0x61, 0x62, 0x63, 0x00, 0x00, 0xaf];
+        assert_eq!(take_value(&mut bytes)?, Value::String("abc".into()));
+        assert_eq!(bytes, &[0xaf]);
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }

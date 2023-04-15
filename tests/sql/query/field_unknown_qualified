@@ -1,0 +1,31 @@
+Query: SELECT movies.unknown FROM movies
+
+Error: Unknown field movies.unknown
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "movies",
+                ),
+                "unknown",
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Unknown field movies.unknown")

@@ -1,0 +1,10 @@
+Query: INSERT INTO "integer" VALUES (3)
+Result: Create { count: 1 }
+
+Storage:
+CREATE TABLE "integer" (
+  pk INTEGER PRIMARY KEY
+)
+[Integer(1)]
+[Integer(2)]
+[Integer(3)]

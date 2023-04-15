@@ -1,0 +1,83 @@
+Query: SELECT * FROM booleans ORDER BY value DESC
+
+Explain:
+Order: value desc
+└─ Scan: booleans
+
+Result: ["id", "value"]
+[Integer(1), Boolean(true)]
+[Integer(3), Boolean(false)]
+[Integer(2), Null]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "booleans",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "value",
+            ),
+            Descending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Scan {
+            table: "booleans",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Scan {
+            table: "booleans",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+

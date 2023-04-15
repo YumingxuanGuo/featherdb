@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package session;
+
+service Session {
+    rpc Execute (ExecutionRequest) returns (ExecutionReply);
+}
+
+message ExecutionRequest {
+    bytes data = 1;
+}
+
+message ExecutionReply {
+    bytes data = 1;
+}

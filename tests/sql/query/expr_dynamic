@@ -1,0 +1,40 @@
+Query: SELECT 2020 - year AS age FROM movies
+
+Error: Unknown field year
+
+AST: Select {
+    select: [
+        (
+            Operation(
+                Subtract(
+                    Literal(
+                        Integer(
+                            2020,
+                        ),
+                    ),
+                    Field(
+                        None,
+                        "year",
+                    ),
+                ),
+            ),
+            Some(
+                "age",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Unknown field year")

@@ -140,3 +140,34 @@ impl From<tokio::sync::oneshot::error::RecvError> for Error {
         Error::Internal(err.to_string())
     }
 }
+
+impl From<tonic::Status> for Error {
+    fn from(err: tonic::Status) -> Self {
+        let chunks = err.message().split(" ").collect::<Vec<_>>();
+        match chunks[0] {
+            "[Config]" => Error::Config(chunks[1..].join(" ")),
+            "[Internal]" => Error::Internal(chunks[1..].join(" ")),
+            "[Parse]" => Error::Parse(chunks[1..].join(" ")),
+            "[Value]" => Error::Value(chunks[1..].join(" ")),
+            "[Abort]" => Error::Abort,
+            "[ReadOnly]" => Error::ReadOnly,
+            "[Serialization]" => Error::Serialization,
+            _ => Error::Internal(format!("Unknown error type: {}", err.message()).to_string()),
+        }
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let msg = match err {
+            Error::Config(s) => format!("[Config] {}", s),
+            Error::Internal(s) => format!("[Internal] {}", s),
+            Error::Parse(s) => format!("[Parse] {}", s),
+            Error::Value(s) => format!("[Value] {}", s),
+            Error::Abort => format!("[Abort] Operation aborted"),
+            Error::ReadOnly => format!("[ReadOnly] Read-only transaction"),
+            Error::Serialization => format!("[Serialization] Serialization failure, retry transaction"),
+        };
+        tonic::Status::internal(msg)
+    }
+}

@@ -1,0 +1,210 @@
+Query: SELECT * FROM movies INNER JOIN genres ON movies.genre_id = genres.id AND movies.id = genres.id
+
+Explain:
+NestedLoopJoin: inner on movies.genre_id = genres.id AND movies.id = genres.id
+├─ Scan: movies
+└─ Scan: genres
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd", "id", "name"]
+[Integer(1), String("Stalker"), Integer(1), Integer(1), Integer(1979), Float(8.2), Null, Integer(1), String("Science Fiction")]
+[Integer(2), String("Sicario"), Integer(2), Integer(2), Integer(2015), Float(7.6), Boolean(true), Integer(2), String("Action")]
+
+AST: Select {
+    select: [],
+    from: [
+        Join {
+            left: Table {
+                name: "movies",
+                alias: None,
+            },
+            right: Table {
+                name: "genres",
+                alias: None,
+            },
+            type: Inner,
+            predicate: Some(
+                Operation(
+                    And(
+                        Operation(
+                            Equal(
+                                Field(
+                                    Some(
+                                        "movies",
+                                    ),
+                                    "genre_id",
+                                ),
+                                Field(
+                                    Some(
+                                        "genres",
+                                    ),
+                                    "id",
+                                ),
+                            ),
+                        ),
+                        Operation(
+                            Equal(
+                                Field(
+                                    Some(
+                                        "movies",
+                                    ),
+                                    "id",
+                                ),
+                                Field(
+                                    Some(
+                                        "genres",
+                                    ),
+                                    "id",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    NestedLoopJoin {
+        left: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        left_size: 7,
+        right: Scan {
+            table: "genres",
+            alias: None,
+            filter: None,
+        },
+        predicate: Some(
+            And(
+                Equal(
+                    Field(
+                        3,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "genre_id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+                Equal(
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        outer: false,
+    },
+)
+
+Optimized plan: Plan(
+    NestedLoopJoin {
+        left: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        left_size: 7,
+        right: Scan {
+            table: "genres",
+            alias: None,
+            filter: None,
+        },
+        predicate: Some(
+            And(
+                Equal(
+                    Field(
+                        3,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "genre_id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+                Equal(
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        outer: false,
+    },
+)
+

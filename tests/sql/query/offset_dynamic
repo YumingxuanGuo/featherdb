@@ -1,0 +1,35 @@
+Query: SELECT * FROM movies OFFSET 2000 - released
+
+Error: Expression must be constant, found field released
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: Some(
+        Operation(
+            Subtract(
+                Literal(
+                    Integer(
+                        2000,
+                    ),
+                ),
+                Field(
+                    None,
+                    "released",
+                ),
+            ),
+        ),
+    ),
+    limit: None,
+}
+
+Plan: Value("Expression must be constant, found field released")

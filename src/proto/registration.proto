@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package registration;
+
+service Registration {
+    rpc Register (RegistrationRequest) returns (RegistrationReply);
+}
+
+message RegistrationRequest {
+    
+}
+
+message RegistrationReply {
+    string port = 1;
+}
