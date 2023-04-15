@@ -1,0 +1,52 @@
+Query: SELECT * FROM movies WHERE NULL
+
+Explain:
+Scan: movies (NULL)
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd"]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: Some(
+        Literal(
+            Null,
+        ),
+    ),
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Filter {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        predicate: Constant(
+            Null,
+        ),
+    },
+)
+
+Optimized plan: Plan(
+    Scan {
+        table: "movies",
+        alias: None,
+        filter: Some(
+            Constant(
+                Null,
+            ),
+        ),
+    },
+)
+

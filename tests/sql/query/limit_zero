@@ -1,0 +1,52 @@
+Query: SELECT * FROM movies LIMIT 0
+
+Explain:
+Limit: 0
+└─ Scan: movies
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd"]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: Some(
+        Literal(
+            Integer(
+                0,
+            ),
+        ),
+    ),
+}
+
+Plan: Plan(
+    Limit {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        limit: 0,
+    },
+)
+
+Optimized plan: Plan(
+    Limit {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        limit: 0,
+    },
+)
+

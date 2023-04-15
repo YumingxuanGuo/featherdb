@@ -1,0 +1,329 @@
+Query: SELECT studio_id, SUM(rating * 10) / COUNT(*) + studio_id FROM movies GROUP BY studio_id ORDER BY studio_id
+
+Explain:
+Order: movies.studio_id asc
+└─ Projection: movies.studio_id, #0 / #1 + studio_id
+   └─ Aggregation: sum, count
+      └─ Projection: rating * 10, TRUE, studio_id
+         └─ Scan: movies
+
+Result: ["studio_id", "?"]
+[Integer(1), Float(82.5)]
+[Integer(2), Float(77.0)]
+[Integer(3), Float(72.0)]
+[Integer(4), Float(83.2)]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                None,
+                "studio_id",
+            ),
+            None,
+        ),
+        (
+            Operation(
+                Add(
+                    Operation(
+                        Divide(
+                            Function(
+                                "sum",
+                                [
+                                    Operation(
+                                        Multiply(
+                                            Field(
+                                                None,
+                                                "rating",
+                                            ),
+                                            Literal(
+                                                Integer(
+                                                    10,
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ],
+                            ),
+                            Function(
+                                "count",
+                                [
+                                    Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        ),
+                    ),
+                    Field(
+                        None,
+                        "studio_id",
+                    ),
+                ),
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "studio_id",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "studio_id",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Multiply(
+                                Field(
+                                    5,
+                                    Some(
+                                        (
+                                            None,
+                                            "rating",
+                                        ),
+                                    ),
+                                ),
+                                Constant(
+                                    Integer(
+                                        10,
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Constant(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Sum,
+                    Count,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "studio_id",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Add(
+                        Divide(
+                            Field(
+                                0,
+                                None,
+                            ),
+                            Field(
+                                1,
+                                None,
+                            ),
+                        ),
+                        Field(
+                            2,
+                            Some(
+                                (
+                                    None,
+                                    "studio_id",
+                                ),
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "studio_id",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Multiply(
+                                Field(
+                                    5,
+                                    Some(
+                                        (
+                                            None,
+                                            "rating",
+                                        ),
+                                    ),
+                                ),
+                                Constant(
+                                    Integer(
+                                        10,
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Constant(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Sum,
+                    Count,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "studio_id",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Add(
+                        Divide(
+                            Field(
+                                0,
+                                None,
+                            ),
+                            Field(
+                                1,
+                                None,
+                            ),
+                        ),
+                        Field(
+                            2,
+                            Some(
+                                (
+                                    None,
+                                    "studio_id",
+                                ),
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "studio_id",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

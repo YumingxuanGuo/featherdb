@@ -1,0 +1,76 @@
+Query: SELECT * FROM movies WHERE id = 3
+
+Explain:
+KeyLookup: movies (3)
+
+Result: ["id", "title", "studio_id", "genre_id", "released", "rating", "ultrahd"]
+[Integer(3), String("Primer"), Integer(3), Integer(1), Integer(2004), Float(6.9), Null]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: Some(
+        Operation(
+            Equal(
+                Field(
+                    None,
+                    "id",
+                ),
+                Literal(
+                    Integer(
+                        3,
+                    ),
+                ),
+            ),
+        ),
+    ),
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Filter {
+        source: Scan {
+            table: "movies",
+            alias: None,
+            filter: None,
+        },
+        predicate: Equal(
+            Field(
+                0,
+                Some(
+                    (
+                        None,
+                        "id",
+                    ),
+                ),
+            ),
+            Constant(
+                Integer(
+                    3,
+                ),
+            ),
+        ),
+    },
+)
+
+Optimized plan: Plan(
+    KeyLookup {
+        table: "movies",
+        alias: None,
+        keys: [
+            Integer(
+                3,
+            ),
+        ],
+    },
+)
+

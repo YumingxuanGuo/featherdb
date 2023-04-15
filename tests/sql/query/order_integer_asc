@@ -1,0 +1,85 @@
+Query: SELECT * FROM integers ORDER BY value ASC
+
+Explain:
+Order: value asc
+└─ Scan: integers
+
+Result: ["id", "value"]
+[Integer(2), Null]
+[Integer(3), Integer(-3)]
+[Integer(5), Integer(0)]
+[Integer(4), Integer(3)]
+[Integer(1), Integer(7)]
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "integers",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "value",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Scan {
+            table: "integers",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Scan {
+            table: "integers",
+            alias: None,
+            filter: None,
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "value",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

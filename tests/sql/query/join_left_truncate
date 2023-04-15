@@ -1,0 +1,242 @@
+Query: SELECT g.id AS genre_id, m.id AS movie_id FROM genres g LEFT JOIN movies m ON m.id = g.id
+
+Explain:
+Projection: g.id, m.id
+└─ HashJoin: outer on g.id = m.id
+   ├─ Scan: genres as g
+   └─ Scan: movies as m
+
+Result: ["genre_id", "movie_id"]
+[Integer(1), Integer(1)]
+[Integer(2), Integer(2)]
+[Integer(3), Integer(3)]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "g",
+                ),
+                "id",
+            ),
+            Some(
+                "genre_id",
+            ),
+        ),
+        (
+            Field(
+                Some(
+                    "m",
+                ),
+                "id",
+            ),
+            Some(
+                "movie_id",
+            ),
+        ),
+    ],
+    from: [
+        Join {
+            left: Table {
+                name: "genres",
+                alias: Some(
+                    "g",
+                ),
+            },
+            right: Table {
+                name: "movies",
+                alias: Some(
+                    "m",
+                ),
+            },
+            type: Left,
+            predicate: Some(
+                Operation(
+                    Equal(
+                        Field(
+                            Some(
+                                "m",
+                            ),
+                            "id",
+                        ),
+                        Field(
+                            Some(
+                                "g",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: NestedLoopJoin {
+            left: Scan {
+                table: "genres",
+                alias: Some(
+                    "g",
+                ),
+                filter: None,
+            },
+            left_size: 2,
+            right: Scan {
+                table: "movies",
+                alias: Some(
+                    "m",
+                ),
+                filter: None,
+            },
+            predicate: Some(
+                Equal(
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "m",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "g",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            outer: true,
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "g",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "genre_id",
+                ),
+            ),
+            (
+                Field(
+                    2,
+                    Some(
+                        (
+                            Some(
+                                "m",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "movie_id",
+                ),
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: HashJoin {
+            left: Scan {
+                table: "genres",
+                alias: Some(
+                    "g",
+                ),
+                filter: None,
+            },
+            left_field: (
+                0,
+                Some(
+                    (
+                        Some(
+                            "g",
+                        ),
+                        "id",
+                    ),
+                ),
+            ),
+            right: Scan {
+                table: "movies",
+                alias: Some(
+                    "m",
+                ),
+                filter: None,
+            },
+            right_field: (
+                0,
+                Some(
+                    (
+                        Some(
+                            "m",
+                        ),
+                        "id",
+                    ),
+                ),
+            ),
+            outer: true,
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "g",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "genre_id",
+                ),
+            ),
+            (
+                Field(
+                    2,
+                    Some(
+                        (
+                            Some(
+                                "m",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                Some(
+                    "movie_id",
+                ),
+            ),
+        ],
+    },
+)
+

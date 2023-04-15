@@ -1,0 +1,199 @@
+Query: SELECT MAX(rating) AS best FROM movies GROUP BY studio_id ORDER BY best DESC
+
+Explain:
+Order: best desc
+└─ Projection: #0
+   └─ Aggregation: maximum
+      └─ Projection: rating, studio_id
+         └─ Scan: movies
+
+Result: ["best"]
+[Float(8.8)]
+[Float(8.2)]
+[Float(7.6)]
+[Float(6.9)]
+
+AST: Select {
+    select: [
+        (
+            Function(
+                "max",
+                [
+                    Field(
+                        None,
+                        "rating",
+                    ),
+                ],
+            ),
+            Some(
+                "best",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "studio_id",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "best",
+            ),
+            Descending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Some(
+                        "best",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "best",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Some(
+                        "best",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            None,
+                            "best",
+                        ),
+                    ),
+                ),
+                Descending,
+            ),
+        ],
+    },
+)
+

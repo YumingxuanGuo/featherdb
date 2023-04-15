@@ -1,0 +1,276 @@
+Query: SELECT id, rating FROM movies HAVING rating > 8 ORDER BY id
+
+Explain:
+Projection: #0, #1
+└─ Order: movies.id asc
+   └─ Filter: movies.rating > 8
+      └─ Projection: id, rating, rating
+         └─ Scan: movies
+
+Result: ["id", "rating"]
+[Integer(1), Float(8.2)]
+[Integer(4), Float(8.2)]
+[Integer(6), Float(8.1)]
+[Integer(10), Float(8.8)]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                None,
+                "id",
+            ),
+            None,
+        ),
+        (
+            Field(
+                None,
+                "rating",
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: Some(
+        Operation(
+            GreaterThan(
+                Field(
+                    None,
+                    "rating",
+                ),
+                Literal(
+                    Integer(
+                        8,
+                    ),
+                ),
+            ),
+        ),
+    ),
+    order: [
+        (
+            Field(
+                None,
+                "id",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Order {
+            source: Filter {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                0,
+                                Some(
+                                    (
+                                        None,
+                                        "id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                predicate: GreaterThan(
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "rating",
+                            ),
+                        ),
+                    ),
+                    Constant(
+                        Integer(
+                            8,
+                        ),
+                    ),
+                ),
+            },
+            orders: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    Ascending,
+                ),
+            ],
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    None,
+                ),
+                None,
+            ),
+            (
+                Field(
+                    1,
+                    None,
+                ),
+                None,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Order {
+            source: Filter {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                0,
+                                Some(
+                                    (
+                                        None,
+                                        "id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                predicate: GreaterThan(
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "rating",
+                            ),
+                        ),
+                    ),
+                    Constant(
+                        Integer(
+                            8,
+                        ),
+                    ),
+                ),
+            },
+            orders: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    Ascending,
+                ),
+            ],
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    None,
+                ),
+                None,
+            ),
+            (
+                Field(
+                    1,
+                    None,
+                ),
+                None,
+            ),
+        ],
+    },
+)
+

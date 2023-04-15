@@ -1,5 +1,6 @@
 mod expression;
 mod mutation;
+mod query;
 mod schema;
 
 use featherdb::concurrency::MVCC;

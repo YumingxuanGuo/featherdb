@@ -1,0 +1,42 @@
+Query: SELECT studio_id, COUNT(*) FROM movies
+
+Error: Unknown field studio_id
+
+AST: Select {
+    select: [
+        (
+            Field(
+                None,
+                "studio_id",
+            ),
+            None,
+        ),
+        (
+            Function(
+                "count",
+                [
+                    Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                ],
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Unknown field studio_id")

@@ -1,0 +1,113 @@
+Query: SELECT COUNT(*) FROM movies
+
+Explain:
+Projection: #0
+└─ Aggregation: count
+   └─ Projection: TRUE
+      └─ Scan: movies
+
+Result: ["?"]
+[Integer(10)]
+
+AST: Select {
+    select: [
+        (
+            Function(
+                "count",
+                [
+                    Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                ],
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Aggregation {
+            source: Projection {
+                source: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                expressions: [
+                    (
+                        Constant(
+                            Boolean(
+                                true,
+                            ),
+                        ),
+                        None,
+                    ),
+                ],
+            },
+            aggregates: [
+                Count,
+            ],
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    None,
+                ),
+                None,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Aggregation {
+            source: Projection {
+                source: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                expressions: [
+                    (
+                        Constant(
+                            Boolean(
+                                true,
+                            ),
+                        ),
+                        None,
+                    ),
+                ],
+            },
+            aggregates: [
+                Count,
+            ],
+        },
+        expressions: [
+            (
+                Field(
+                    0,
+                    None,
+                ),
+                None,
+            ),
+        ],
+    },
+)
+

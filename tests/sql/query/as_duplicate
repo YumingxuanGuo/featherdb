@@ -1,0 +1,97 @@
+Query: SELECT 1 AS a, 2 AS a
+
+Explain:
+Projection: 1, 2
+└─ Nothing
+
+Result: ["a", "a"]
+[Integer(1), Integer(2)]
+
+AST: Select {
+    select: [
+        (
+            Literal(
+                Integer(
+                    1,
+                ),
+            ),
+            Some(
+                "a",
+            ),
+        ),
+        (
+            Literal(
+                Integer(
+                    2,
+                ),
+            ),
+            Some(
+                "a",
+            ),
+        ),
+    ],
+    from: [],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Nothing,
+        expressions: [
+            (
+                Constant(
+                    Integer(
+                        1,
+                    ),
+                ),
+                Some(
+                    "a",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        2,
+                    ),
+                ),
+                Some(
+                    "a",
+                ),
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Nothing,
+        expressions: [
+            (
+                Constant(
+                    Integer(
+                        1,
+                    ),
+                ),
+                Some(
+                    "a",
+                ),
+            ),
+            (
+                Constant(
+                    Integer(
+                        2,
+                    ),
+                ),
+                Some(
+                    "a",
+                ),
+            ),
+        ],
+    },
+)
+

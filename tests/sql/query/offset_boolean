@@ -1,0 +1,27 @@
+Query: SELECT * FROM movies OFFSET TRUE
+
+Error: Invalid offset TRUE
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: Some(
+        Literal(
+            Boolean(
+                true,
+            ),
+        ),
+    ),
+    limit: None,
+}
+
+Plan: Value("Invalid offset TRUE")

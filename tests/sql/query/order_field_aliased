@@ -1,0 +1,335 @@
+Query: SELECT movies.id, title, genres.name AS genre FROM movies, genres WHERE movies.genre_id = genres.id ORDER BY genre, title
+
+Explain:
+Order: genre asc, movies.title asc
+└─ Projection: movies.id, title, genres.name
+   └─ HashJoin: inner on movies.genre_id = genres.id
+      ├─ Scan: movies
+      └─ Scan: genres
+
+Result: ["id", "title", "genre"]
+[Integer(4), String("Heat"), String("Action")]
+[Integer(2), String("Sicario"), String("Action")]
+[Integer(9), String("Birdman"), String("Comedy")]
+[Integer(8), String("Blindspotting"), String("Comedy")]
+[Integer(7), String("Gravity"), String("Science Fiction")]
+[Integer(10), String("Inception"), String("Science Fiction")]
+[Integer(3), String("Primer"), String("Science Fiction")]
+[Integer(6), String("Solaris"), String("Science Fiction")]
+[Integer(1), String("Stalker"), String("Science Fiction")]
+[Integer(5), String("The Fountain"), String("Science Fiction")]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "movies",
+                ),
+                "id",
+            ),
+            None,
+        ),
+        (
+            Field(
+                None,
+                "title",
+            ),
+            None,
+        ),
+        (
+            Field(
+                Some(
+                    "genres",
+                ),
+                "name",
+            ),
+            Some(
+                "genre",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+        Table {
+            name: "genres",
+            alias: None,
+        },
+    ],
+    where: Some(
+        Operation(
+            Equal(
+                Field(
+                    Some(
+                        "movies",
+                    ),
+                    "genre_id",
+                ),
+                Field(
+                    Some(
+                        "genres",
+                    ),
+                    "id",
+                ),
+            ),
+        ),
+    ),
+    group_by: [],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "genre",
+            ),
+            Ascending,
+        ),
+        (
+            Field(
+                None,
+                "title",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Filter {
+                source: NestedLoopJoin {
+                    left: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    left_size: 7,
+                    right: Scan {
+                        table: "genres",
+                        alias: None,
+                        filter: None,
+                    },
+                    predicate: None,
+                    outer: false,
+                },
+                predicate: Equal(
+                    Field(
+                        3,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "genre_id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        7,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                None,
+                                "title",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        8,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "name",
+                            ),
+                        ),
+                    ),
+                    Some(
+                        "genre",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    2,
+                    Some(
+                        (
+                            None,
+                            "genre",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: HashJoin {
+                left: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                left_field: (
+                    3,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "genre_id",
+                        ),
+                    ),
+                ),
+                right: Scan {
+                    table: "genres",
+                    alias: None,
+                    filter: None,
+                },
+                right_field: (
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "genres",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                outer: false,
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        1,
+                        Some(
+                            (
+                                None,
+                                "title",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        8,
+                        Some(
+                            (
+                                Some(
+                                    "genres",
+                                ),
+                                "name",
+                            ),
+                        ),
+                    ),
+                    Some(
+                        "genre",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    2,
+                    Some(
+                        (
+                            None,
+                            "genre",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

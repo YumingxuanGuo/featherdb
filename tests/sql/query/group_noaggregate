@@ -1,0 +1,184 @@
+Query: SELECT title FROM movies GROUP BY title ORDER BY title ASC
+
+Explain:
+Order: movies.title asc
+└─ Projection: movies.title
+   └─ Aggregation: 
+      └─ Projection: title
+         └─ Scan: movies
+
+Result: ["title"]
+[String("Birdman")]
+[String("Blindspotting")]
+[String("Gravity")]
+[String("Heat")]
+[String("Inception")]
+[String("Primer")]
+[String("Sicario")]
+[String("Solaris")]
+[String("Stalker")]
+[String("The Fountain")]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                None,
+                "title",
+            ),
+            None,
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "title",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "title",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                1,
+                                Some(
+                                    (
+                                        None,
+                                        "title",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [],
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "title",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                1,
+                                Some(
+                                    (
+                                        None,
+                                        "title",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [],
+            },
+            expressions: [
+                (
+                    Field(
+                        0,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "title",
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

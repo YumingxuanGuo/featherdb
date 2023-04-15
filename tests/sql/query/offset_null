@@ -1,0 +1,25 @@
+Query: SELECT * FROM movies OFFSET NULL
+
+Error: Invalid offset NULL
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: Some(
+        Literal(
+            Null,
+        ),
+    ),
+    limit: None,
+}
+
+Plan: Value("Invalid offset NULL")

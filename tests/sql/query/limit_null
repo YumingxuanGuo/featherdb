@@ -1,0 +1,25 @@
+Query: SELECT * FROM movies LIMIT NULL
+
+Error: Invalid limit NULL
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: Some(
+        Literal(
+            Null,
+        ),
+    ),
+}
+
+Plan: Value("Invalid limit NULL")

@@ -1,0 +1,31 @@
+Query: SELECT * FROM movies LIMIT -1
+
+Error: Invalid limit -1
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: Some(
+        Operation(
+            Negate(
+                Literal(
+                    Integer(
+                        1,
+                    ),
+                ),
+            ),
+        ),
+    ),
+}
+
+Plan: Value("Invalid limit -1")

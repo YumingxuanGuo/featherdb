@@ -1,0 +1,370 @@
+Query: 
+        SELECT movies.title, genres.name AS genre, studios.name AS studio
+        FROM movies
+            INNER JOIN genres ON movies.genre_id = genres.id
+            INNER JOIN studios ON movies.studio_id = studios.id
+
+Explain:
+Projection: movies.title, genres.name, studios.name
+└─ HashJoin: inner on movies.studio_id = studios.id
+   ├─ HashJoin: inner on movies.genre_id = genres.id
+   │  ├─ Scan: movies
+   │  └─ Scan: genres
+   └─ Scan: studios
+
+Result: ["title", "genre", "studio"]
+[String("Stalker"), String("Science Fiction"), String("Mosfilm")]
+[String("Sicario"), String("Action"), String("Lionsgate")]
+[String("Primer"), String("Science Fiction"), String("StudioCanal")]
+[String("Heat"), String("Action"), String("Warner Bros")]
+[String("The Fountain"), String("Science Fiction"), String("Warner Bros")]
+[String("Solaris"), String("Science Fiction"), String("Mosfilm")]
+[String("Gravity"), String("Science Fiction"), String("Warner Bros")]
+[String("Blindspotting"), String("Comedy"), String("Lionsgate")]
+[String("Birdman"), String("Comedy"), String("Warner Bros")]
+[String("Inception"), String("Science Fiction"), String("Warner Bros")]
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "movies",
+                ),
+                "title",
+            ),
+            None,
+        ),
+        (
+            Field(
+                Some(
+                    "genres",
+                ),
+                "name",
+            ),
+            Some(
+                "genre",
+            ),
+        ),
+        (
+            Field(
+                Some(
+                    "studios",
+                ),
+                "name",
+            ),
+            Some(
+                "studio",
+            ),
+        ),
+    ],
+    from: [
+        Join {
+            left: Join {
+                left: Table {
+                    name: "movies",
+                    alias: None,
+                },
+                right: Table {
+                    name: "genres",
+                    alias: None,
+                },
+                type: Inner,
+                predicate: Some(
+                    Operation(
+                        Equal(
+                            Field(
+                                Some(
+                                    "movies",
+                                ),
+                                "genre_id",
+                            ),
+                            Field(
+                                Some(
+                                    "genres",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            },
+            right: Table {
+                name: "studios",
+                alias: None,
+            },
+            type: Inner,
+            predicate: Some(
+                Operation(
+                    Equal(
+                        Field(
+                            Some(
+                                "movies",
+                            ),
+                            "studio_id",
+                        ),
+                        Field(
+                            Some(
+                                "studios",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+            ),
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: NestedLoopJoin {
+            left: NestedLoopJoin {
+                left: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                left_size: 7,
+                right: Scan {
+                    table: "genres",
+                    alias: None,
+                    filter: None,
+                },
+                predicate: Some(
+                    Equal(
+                        Field(
+                            3,
+                            Some(
+                                (
+                                    Some(
+                                        "movies",
+                                    ),
+                                    "genre_id",
+                                ),
+                            ),
+                        ),
+                        Field(
+                            7,
+                            Some(
+                                (
+                                    Some(
+                                        "genres",
+                                    ),
+                                    "id",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                outer: false,
+            },
+            left_size: 9,
+            right: Scan {
+                table: "studios",
+                alias: None,
+                filter: None,
+            },
+            predicate: Some(
+                Equal(
+                    Field(
+                        2,
+                        Some(
+                            (
+                                Some(
+                                    "movies",
+                                ),
+                                "studio_id",
+                            ),
+                        ),
+                    ),
+                    Field(
+                        9,
+                        Some(
+                            (
+                                Some(
+                                    "studios",
+                                ),
+                                "id",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            outer: false,
+        },
+        expressions: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                None,
+            ),
+            (
+                Field(
+                    8,
+                    Some(
+                        (
+                            Some(
+                                "genres",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Some(
+                    "genre",
+                ),
+            ),
+            (
+                Field(
+                    10,
+                    Some(
+                        (
+                            Some(
+                                "studios",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Some(
+                    "studio",
+                ),
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: HashJoin {
+            left: HashJoin {
+                left: Scan {
+                    table: "movies",
+                    alias: None,
+                    filter: None,
+                },
+                left_field: (
+                    3,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "genre_id",
+                        ),
+                    ),
+                ),
+                right: Scan {
+                    table: "genres",
+                    alias: None,
+                    filter: None,
+                },
+                right_field: (
+                    0,
+                    Some(
+                        (
+                            Some(
+                                "genres",
+                            ),
+                            "id",
+                        ),
+                    ),
+                ),
+                outer: false,
+            },
+            left_field: (
+                2,
+                Some(
+                    (
+                        Some(
+                            "movies",
+                        ),
+                        "studio_id",
+                    ),
+                ),
+            ),
+            right: Scan {
+                table: "studios",
+                alias: None,
+                filter: None,
+            },
+            right_field: (
+                0,
+                Some(
+                    (
+                        Some(
+                            "studios",
+                        ),
+                        "id",
+                    ),
+                ),
+            ),
+            outer: false,
+        },
+        expressions: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            Some(
+                                "movies",
+                            ),
+                            "title",
+                        ),
+                    ),
+                ),
+                None,
+            ),
+            (
+                Field(
+                    8,
+                    Some(
+                        (
+                            Some(
+                                "genres",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Some(
+                    "genre",
+                ),
+            ),
+            (
+                Field(
+                    10,
+                    Some(
+                        (
+                            Some(
+                                "studios",
+                            ),
+                            "name",
+                        ),
+                    ),
+                ),
+                Some(
+                    "studio",
+                ),
+            ),
+        ],
+    },
+)
+

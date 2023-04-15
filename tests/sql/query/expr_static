@@ -1,0 +1,139 @@
+Query: SELECT 1 + 2 * 3, 'abc' LIKE 'x%' AS nope
+
+Explain:
+Projection: 7, FALSE
+└─ Nothing
+
+Result: ["?", "nope"]
+[Integer(7), Boolean(false)]
+
+AST: Select {
+    select: [
+        (
+            Operation(
+                Add(
+                    Literal(
+                        Integer(
+                            1,
+                        ),
+                    ),
+                    Operation(
+                        Multiply(
+                            Literal(
+                                Integer(
+                                    2,
+                                ),
+                            ),
+                            Literal(
+                                Integer(
+                                    3,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            None,
+        ),
+        (
+            Operation(
+                Like(
+                    Literal(
+                        String(
+                            "abc",
+                        ),
+                    ),
+                    Literal(
+                        String(
+                            "x%",
+                        ),
+                    ),
+                ),
+            ),
+            Some(
+                "nope",
+            ),
+        ),
+    ],
+    from: [],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Projection {
+        source: Nothing,
+        expressions: [
+            (
+                Add(
+                    Constant(
+                        Integer(
+                            1,
+                        ),
+                    ),
+                    Multiply(
+                        Constant(
+                            Integer(
+                                2,
+                            ),
+                        ),
+                        Constant(
+                            Integer(
+                                3,
+                            ),
+                        ),
+                    ),
+                ),
+                None,
+            ),
+            (
+                Like(
+                    Constant(
+                        String(
+                            "abc",
+                        ),
+                    ),
+                    Constant(
+                        String(
+                            "x%",
+                        ),
+                    ),
+                ),
+                Some(
+                    "nope",
+                ),
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Projection {
+        source: Nothing,
+        expressions: [
+            (
+                Constant(
+                    Integer(
+                        7,
+                    ),
+                ),
+                None,
+            ),
+            (
+                Constant(
+                    Boolean(
+                        false,
+                    ),
+                ),
+                Some(
+                    "nope",
+                ),
+            ),
+        ],
+    },
+)
+

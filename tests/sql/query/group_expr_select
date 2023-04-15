@@ -1,0 +1,253 @@
+Query: SELECT studio_id * 2, MAX(rating) AS rating FROM movies GROUP BY studio_id ORDER BY rating
+
+Explain:
+Order: rating asc
+└─ Projection: studio_id * 2, #0
+   └─ Aggregation: maximum
+      └─ Projection: rating, studio_id
+         └─ Scan: movies
+
+Result: ["?", "rating"]
+[Integer(6), Float(6.9)]
+[Integer(4), Float(7.6)]
+[Integer(2), Float(8.2)]
+[Integer(8), Float(8.8)]
+
+AST: Select {
+    select: [
+        (
+            Operation(
+                Multiply(
+                    Field(
+                        None,
+                        "studio_id",
+                    ),
+                    Literal(
+                        Integer(
+                            2,
+                        ),
+                    ),
+                ),
+            ),
+            None,
+        ),
+        (
+            Function(
+                "max",
+                [
+                    Field(
+                        None,
+                        "rating",
+                    ),
+                ],
+            ),
+            Some(
+                "rating",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [
+        Field(
+            None,
+            "studio_id",
+        ),
+    ],
+    having: None,
+    order: [
+        (
+            Field(
+                None,
+                "rating",
+            ),
+            Ascending,
+        ),
+    ],
+    offset: None,
+    limit: None,
+}
+
+Plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Multiply(
+                        Field(
+                            1,
+                            Some(
+                                (
+                                    None,
+                                    "studio_id",
+                                ),
+                            ),
+                        ),
+                        Constant(
+                            Integer(
+                                2,
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Some(
+                        "rating",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "rating",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+
+Optimized plan: Plan(
+    Order {
+        source: Projection {
+            source: Aggregation {
+                source: Projection {
+                    source: Scan {
+                        table: "movies",
+                        alias: None,
+                        filter: None,
+                    },
+                    expressions: [
+                        (
+                            Field(
+                                5,
+                                Some(
+                                    (
+                                        None,
+                                        "rating",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                        (
+                            Field(
+                                2,
+                                Some(
+                                    (
+                                        None,
+                                        "studio_id",
+                                    ),
+                                ),
+                            ),
+                            None,
+                        ),
+                    ],
+                },
+                aggregates: [
+                    Max,
+                ],
+            },
+            expressions: [
+                (
+                    Multiply(
+                        Field(
+                            1,
+                            Some(
+                                (
+                                    None,
+                                    "studio_id",
+                                ),
+                            ),
+                        ),
+                        Constant(
+                            Integer(
+                                2,
+                            ),
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    Field(
+                        0,
+                        None,
+                    ),
+                    Some(
+                        "rating",
+                    ),
+                ),
+            ],
+        },
+        orders: [
+            (
+                Field(
+                    1,
+                    Some(
+                        (
+                            None,
+                            "rating",
+                        ),
+                    ),
+                ),
+                Ascending,
+            ),
+        ],
+    },
+)
+

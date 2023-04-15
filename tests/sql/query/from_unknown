@@ -1,0 +1,21 @@
+Query: SELECT * FROM unknown
+
+Error: Table unknown does not exist
+
+AST: Select {
+    select: [],
+    from: [
+        Table {
+            name: "unknown",
+            alias: None,
+        },
+    ],
+    where: None,
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Table unknown does not exist")

@@ -1,0 +1,83 @@
+Query: SELECT m.id AS movie_id, g.id AS genre_id FROM movies m, genres g WHERE movie_id >= 3 AND genre_id = 1
+
+Error: Unknown field movie_id
+
+AST: Select {
+    select: [
+        (
+            Field(
+                Some(
+                    "m",
+                ),
+                "id",
+            ),
+            Some(
+                "movie_id",
+            ),
+        ),
+        (
+            Field(
+                Some(
+                    "g",
+                ),
+                "id",
+            ),
+            Some(
+                "genre_id",
+            ),
+        ),
+    ],
+    from: [
+        Table {
+            name: "movies",
+            alias: Some(
+                "m",
+            ),
+        },
+        Table {
+            name: "genres",
+            alias: Some(
+                "g",
+            ),
+        },
+    ],
+    where: Some(
+        Operation(
+            And(
+                Operation(
+                    GreaterThanOrEqual(
+                        Field(
+                            None,
+                            "movie_id",
+                        ),
+                        Literal(
+                            Integer(
+                                3,
+                            ),
+                        ),
+                    ),
+                ),
+                Operation(
+                    Equal(
+                        Field(
+                            None,
+                            "genre_id",
+                        ),
+                        Literal(
+                            Integer(
+                                1,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ),
+    group_by: [],
+    having: None,
+    order: [],
+    offset: None,
+    limit: None,
+}
+
+Plan: Value("Unknown field movie_id")
