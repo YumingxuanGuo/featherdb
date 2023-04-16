@@ -5,3 +5,7 @@ pub mod registration {
 pub mod session {
     tonic::include_proto!("session");
 }
+
+pub mod raft {
+    tonic::include_proto!("raft");
+}
