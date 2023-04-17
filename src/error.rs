@@ -14,6 +14,7 @@ pub enum Error {
     ReadOnly,
     Serialization,
     Value(String),
+    NotLeader,
 }
 
 impl std::error::Error for Error {}
@@ -27,6 +28,7 @@ impl Display for Error {
             Error::Abort => write!(f, "Operation aborted"),
             Error::Serialization => write!(f, "Serialization failure, retry transaction"),
             Error::ReadOnly => write!(f, "Read-only transaction"),
+            Error::NotLeader => write!(f, "Not leader"),
         }
     }
 }
@@ -167,6 +169,7 @@ impl From<Error> for tonic::Status {
             Error::Abort => format!("[Abort] Operation aborted"),
             Error::ReadOnly => format!("[ReadOnly] Read-only transaction"),
             Error::Serialization => format!("[Serialization] Serialization failure, retry transaction"),
+            Error::NotLeader => format!("[NotLeader] Not leader"),
         };
         tonic::Status::internal(msg)
     }
