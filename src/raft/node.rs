@@ -37,10 +37,7 @@ impl Node {
     /// at if it's ever committed; the second is the current term.
     ///
     /// This method must return without blocking on the raft.
-    pub fn start<M>(&self, command: &M) -> Result<(u64, u64)>
-    // where
-    //     M: labcodec::Message,
-    {
+    pub fn start(&self, command: Option<Vec<u8>>) -> Result<(u64, u64)> {
         let mut raft = self.raft.lock()?;
         if !raft.is_leader() {
             return Err(Error::NotLeader);

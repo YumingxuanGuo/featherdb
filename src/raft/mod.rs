@@ -114,6 +114,7 @@ impl Raft {
     /// This method must return quickly.
     pub fn new(
         me: u64,
+        log: Log,
         // peers: Vec<RaftClient>,
         // persister: Box<dyn Persister>,
         // apply_ch: UnboundedSender<ApplyMsg>,
@@ -125,7 +126,7 @@ impl Raft {
 
             current_term: 0,
             voted_for: None,
-            log: Log::new(),
+            log,
 
             commit_index: 0,
             last_applied: 0,
@@ -182,12 +183,10 @@ impl Raft {
         Ok(self.peers[server].clone().request_vote(args).await?)
     }
 
-    fn start<M>(&self, command: &M) -> Result<(u64, u64)>
-    // where
-    //     M: labcodec::Message,
-    {
-        let index = self.log.len();
+    fn start(&mut self, command: Option<Vec<u8>>) -> Result<(u64, u64)> {
+        let index = self.log.last_index + 1;
         let term = self.current_term;
+        self.log.append(term, command)?;
         // TODO: replicate logs
         Ok((index, term))
     }
