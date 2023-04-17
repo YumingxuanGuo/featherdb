@@ -6,8 +6,8 @@
 mod log;
 mod node;
 
-use crate::error::Result;
-use crate::proto::raft::{RequestVoteArgs, RequestVoteReply};
+use crate::error::{Result, Error};
+use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
 
 use self::log::Log;
@@ -136,6 +136,13 @@ impl Raft {
         raft
     }
 
+    pub fn is_leader(&self) -> bool {
+        match self.role {
+            Role::Leader { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Save Raft's persistent state to stable storage,
     /// where it can later be retrieved after a crash and restart.
     fn persist(&mut self) {
@@ -174,13 +181,22 @@ impl Raft {
     ) -> Result<tonic::Response<RequestVoteReply>> {
         Ok(self.peers[server].clone().request_vote(args).await?)
     }
+
+    fn start<M>(&self, command: &M) -> Result<(u64, u64)>
+    // where
+    //     M: labcodec::Message,
+    {
+        let index = self.log.len();
+        let term = self.current_term;
+        // TODO: replicate logs
+        Ok((index, term))
+    }
 }
 
 /// State transition functions.
 impl Raft {
     fn quorum(&self) -> u64 {
-        // self.peers.len() as u64 / 2 + 1
-        todo!()
+        self.peers.len() as u64 / 2 + 1
     }
 
     pub fn become_follower(&mut self, term: u64, leader_id: Option<u64>) {
@@ -209,17 +225,34 @@ impl Raft {
             if i as u64 == self.me {
                 continue;
             }
+            let mut client = self.peers[i].clone();
             let args = RequestVoteArgs {
                 term: self.current_term,
                 candidate_id: self.me,
                 last_log_index: 0,
                 last_log_term: 0,
             };
-            let mut client = self.peers[i].clone();
             futures.push(async move {
                 client.request_vote(args).await
             });
         }
         futures
+    }
+
+    /// Send heartbeats to other nodes.
+    pub fn send_heartbeats(&self) {
+        for i in 0..self.peers.len() {
+            if i as u64 == self.me {
+                continue;
+            }
+            let mut client = self.peers[i].clone();
+            let args = AppendEntriesArgs {
+                term: self.current_term,
+                leader_id: self.me,
+            };
+            tokio::spawn(async move {
+                client.append_entries(args).await
+            });
+        }
     }
 }
