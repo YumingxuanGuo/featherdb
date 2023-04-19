@@ -6,6 +6,8 @@
 mod log;
 mod node;
 
+pub use node::Node;
+
 use crate::error::{Result, Error};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
