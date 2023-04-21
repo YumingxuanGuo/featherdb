@@ -7,12 +7,13 @@ mod log;
 mod node;
 
 pub use node::Node;
+pub use self::log::Log;
 
 use crate::error::{Result, Error};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
+use crate::storage::log::LogDemo;
 
-use self::log::Log;
 use std::collections::HashMap;
 use futures::Future;
 use futures::stream::FuturesUnordered;
@@ -114,21 +115,22 @@ impl Raft {
     /// recent saved state, if any. `Apply_ch` is a channel on which the
     /// tester or service expects Raft to send `ApplyMsg` messages.
     /// This method must return quickly.
+    /// TODO: improve the function signature
     pub fn new(
-        me: u64,
-        log: Log,
+        // me: u64,
+        // log: Log,
         // peers: Vec<RaftClient>,
         // persister: Box<dyn Persister>,
         // apply_ch: UnboundedSender<ApplyMsg>,
-    ) -> Raft {
+    ) -> Result<Raft> {
         let raft = Raft {
             peers: vec![],
             // persister,
-            me,
+            me: 0,
 
             current_term: 0,
             voted_for: None,
-            log,
+            log: Log::new(Box::new(LogDemo::new()))?,
 
             commit_index: 0,
             last_applied: 0,
@@ -136,7 +138,7 @@ impl Raft {
             role: Role::init_follower(),
         };
 
-        raft
+        Ok(raft)
     }
 
     pub fn is_leader(&self) -> bool {
