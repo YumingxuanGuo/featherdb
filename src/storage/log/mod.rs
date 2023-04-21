@@ -1,9 +1,11 @@
-
+pub mod demo;
 
 use std::fmt::Display;
 use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
+
+pub use demo::LogDemo;
 
 /// A log store. Entry indexes are 1-based, to match Raft semantics.
 pub trait LogStore: Display + Sync + Send {
@@ -23,7 +25,7 @@ pub trait LogStore: Display + Sync + Send {
     fn len(&self) -> u64;
 
     /// Scans the log between the given indexes.
-    fn scan(&self, range: Range) -> Scan;
+    fn scan(&self, range: Range) -> LogScan;
 
     /// Returns the size of the log, in bytes.
     fn size(&self) -> u64;
@@ -70,4 +72,4 @@ impl Range {
 }
 
 /// Iterator over a log range.
-pub type Scan<'a> = Box<dyn Iterator<Item = Result<Vec<u8>>> + 'a>;
+pub type LogScan<'a> = Box<dyn Iterator<Item = Result<Vec<u8>>> + 'a>;
