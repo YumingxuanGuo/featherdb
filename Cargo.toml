@@ -32,6 +32,7 @@ tokio-serde = { version = "~0.8", features = ["bincode"] }
 tokio-stream = { version = "~0.1.6", features = ["net"]}
 tokio-util = { version = "0.7.7", features = ["codec"] }
 tonic = "0.9.1"
+tower = "0.4.13"
 
 [dev-dependencies]
 goldenfile = "1.4.5"
