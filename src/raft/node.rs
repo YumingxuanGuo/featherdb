@@ -4,14 +4,28 @@
 #![allow(unused_mut)]
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use futures::{stream::FuturesUnordered, Future};
+use rand::Rng;
 use tokio_stream::StreamExt;
+use tonic::transport::{Server, Channel};
 use tonic::{Response, Status, Request};
 
 use crate::error::{Result, Error};
-use crate::proto::raft::raft_service_server::RaftService;
+use crate::proto::raft::raft_service_client::RaftServiceClient;
+use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
 use super::{Raft, Role, HEARTBEAT_INTERVAL};
+
+// An interceptor function. TODO: use layer instead.
+fn intercept(req: Request<()>) -> core::result::Result<Request<()>, Status> {
+    let mut rng = rand::thread_rng();
+    if rng.gen_bool(0.0) {
+        Err(Status::unavailable("RPC got intercepted."))
+    } else {
+        Ok(req)
+    }
+}
 
 #[derive(Clone)]
 pub struct Node {
@@ -20,9 +34,64 @@ pub struct Node {
 }
 
 impl Node {
-    /// Create a new raft service.
-    pub fn new(raft: Raft) -> Node {
-        Node { raft: Arc::new(Mutex::new(raft)) }
+    /// Create a new raft service. TODO: Set up the raft server according to the config.
+    pub async fn new(me: u64, peers: Vec<String>) -> Result<Node> {
+        let node = Node { raft: Arc::new(Mutex::new(Raft::new()?)) };
+        let node_clone = node.clone();
+
+        let layer = tower::ServiceBuilder::new()
+            .layer(tonic::service::interceptor(intercept))
+            .into_inner();
+
+        let my_addr = peers[me as usize].parse()?;
+        tokio::spawn(async move {
+            match Server::builder()
+                .layer(layer)
+                .add_service(RaftServiceServer::new(node_clone))
+                .serve(my_addr)
+                .await {
+                    Ok(_) => { println!("Raft server built on addr {:?}", my_addr) },
+                    Err(err) => println!("Raft server failed on addr {:?}: {:?}", my_addr, err),
+                };
+        });
+
+        let mut conns = vec![false; peers.len()];
+        'outer: loop {
+            let mut conn_count = 0;
+            for i in 0..peers.len() {
+                if conns[i] {
+                    conn_count += 1;
+                    if conn_count == peers.len() {
+                        break 'outer;
+                    }
+                    continue;
+                }
+                let mut addr = "http://".to_string();
+                addr.push_str(&peers[i]);
+                let channel = match Channel::from_shared(addr).unwrap().connect().await {
+                    Ok(channel) => channel,
+                    Err(err) => {
+                        continue;
+                    },
+                };
+                let mut client = RaftServiceClient::new(channel);
+                let mut raft = node.raft.lock()?;
+                raft.me = me;
+                raft.peers.push(client);
+                conns[i] = true;
+            }
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+
+        Ok(node)
+    }
+
+    /// Start the Raft server. This method should not return until shutdown.
+    pub async fn serve(&self) -> Result<()> {
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            self.tick().unwrap();
+        }
     }
 
     /// The service using Raft (e.g. a k/v server) wants to start
@@ -53,6 +122,11 @@ impl Node {
     /// Whether this peer believes it is the leader.
     pub fn is_leader(&self) -> Result<bool> {
         Ok(self.raft.lock()?.is_leader())
+    }
+
+    /// The id of this peer.
+    pub fn id(&self) -> Result<u64> {
+        Ok(self.raft.lock()?.me)
     }
 
     /// Tick the underlying Raft node to the next state.
