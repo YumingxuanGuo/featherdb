@@ -4,6 +4,7 @@
 
 // The SQL engine provides fundamental CRUD storage operations.
 mod kv;
+pub mod raft;
 pub use kv::KvSqlEngine;
 pub use crate::concurrency::Mode;
 
