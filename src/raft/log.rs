@@ -59,9 +59,27 @@ impl Log {
         Ok(entry)
     }
 
+    /// Commits entries up to and including an index.
+    pub fn commit(&mut self, index: u64) -> Result<u64> {
+        todo!()
+    }
+
     /// Fetches an entry at an index.
     pub fn get(&self, index: u64) -> Result<Option<Entry>> {
         self.store.get(index)?.map(|v| Self::deserialize(&v)).transpose()
+    }
+
+    /// Splices a set of entries onto an offset. The entries must be contiguous, and the first entry
+    /// must be at most last_index+1. If an entry does not exist, append it. If an existing entry
+    /// has a term mismatch, replace it and all following entries.
+    pub fn splice(&mut self, entries: Vec<Entry>) -> Result<u64> {
+        todo!()
+    }
+
+    /// Truncates the log such that its last item is at most index.
+    /// Refuses to remove entries that have been applied or committed.
+    pub fn truncate(&mut self, index: u64) -> Result<u64> {
+        todo!()
     }
 
     /// Serializes a value for the log store.
