@@ -1,6 +1,8 @@
+use std::ops::RangeBounds;
+
 use serde::{Deserialize, Serialize};
 
-use crate::{storage::log::LogStore, error::{Result, Error}};
+use crate::{storage::log::{LogStore, Range}, error::{Result, Error}};
 
 /// A replicated log entry
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -12,6 +14,8 @@ pub struct Entry {
     /// The state machine command. None is used to commit noops during leader election.
     pub command: Option<Vec<u8>>,
 }
+
+pub type Scan<'a> = Box<dyn Iterator<Item = Result<Entry>> + 'a>;
 
 pub struct Log {
     /// The underlying log store.
@@ -69,17 +73,57 @@ impl Log {
         self.store.get(index)?.map(|v| Self::deserialize(&v)).transpose()
     }
 
+    /// Iterates over log entries
+    pub fn scan(&self, range: impl RangeBounds<u64>) -> Scan {
+        Box::new(
+            self.store
+                .scan(Range::from(range))
+                .map(|r| 
+                    r.and_then(|v| Self::deserialize(&v))
+                )
+        )
+    }
+
     /// Splices a set of entries onto an offset. The entries must be contiguous, and the first entry
-    /// must be at most last_index+1. If an entry does not exist, append it. If an existing entry
+    /// must be at most `last_index + 1`. If an entry does not exist, append it. If an existing entry
     /// has a term mismatch, replace it and all following entries.
     pub fn splice(&mut self, entries: Vec<Entry>) -> Result<u64> {
-        todo!()
+        for i in 0..entries.len() {
+            if i == 0 && entries.get(i).unwrap().index > self.last_index + 1 {
+                return Err(Error::Internal("Spliced entries cannot begin past last index".into()));
+            }
+            if entries.get(i).unwrap().index != entries.get(0).unwrap().index + i as u64 {
+                return Err(Error::Internal("Spliced entries must be contiguous".into()));
+            }
+        }
+        for entry in entries {
+            if let Some(ref current) = self.get(entry.index)? {
+                if current.term == entry.term {
+                    continue;
+                }
+                self.truncate(entry.index - 1)?;
+            }
+            self.append(entry.term, entry.command)?;
+        }
+        Ok(self.last_index)
     }
 
     /// Truncates the log such that its last item is at most index.
     /// Refuses to remove entries that have been applied or committed.
     pub fn truncate(&mut self, index: u64) -> Result<u64> {
-        todo!()
+        let (index, term) = match self.store.truncate(index)? {
+            0 => (0, 0),
+            i => self
+                .store
+                .get(i)?
+                .map(|v| Self::deserialize::<Entry>(&v))
+                .transpose()?
+                .map(|e| (e.index, e.term))
+                .ok_or_else(|| Error::Internal(format!("Entry {} not found", index)))?,
+        };
+        self.last_index = index;
+        self.last_term = term;
+        Ok(index)
     }
 
     /// Serializes a value for the log store.
