@@ -29,7 +29,6 @@ message AppendEntriesArgs {
 }
 
 message AppendEntriesReply {
-    uint64 term = 2;
-    uint64 lastLogIndex = 3;
-    bool success = 4;
+    uint64 term = 1;
+    bool success = 2;
 }
