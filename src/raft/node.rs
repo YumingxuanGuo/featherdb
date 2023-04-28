@@ -1,12 +1,10 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(unused_mut)]
-
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use futures::FutureExt;
 use futures::{stream::FuturesUnordered, Future};
 use rand::Rng;
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::transport::{Server, Channel};
 use tonic::{Response, Status, Request};
@@ -15,6 +13,7 @@ use crate::error::{Result, Error};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
+use crate::server::{deserialize, serialize};
 use super::{Raft, Role, HEARTBEAT_INTERVAL};
 
 // An interceptor function. TODO: use layer instead.
@@ -111,7 +110,8 @@ impl Node {
         if !raft.is_leader() {
             return Err(Error::NotLeader);
         }
-        raft.start(command)
+        let (index, term) = raft.start(command)?;
+        Ok((index, term))
     }
 
     /// The current term of this peer.
@@ -139,11 +139,12 @@ impl Node {
                 if *leader_seen_ticks >= leader_seen_timeout {
                     raft.become_candidate();
                     let mut request_vote_replies = raft.solicit_votes();
-                    let node = self.clone();
+
                     let quorum = raft.quorum();
                     let current_term = raft.current_term;
+                    let raft = self.raft.clone();
                     tokio::spawn(async move {
-                        node.count_votes(quorum, current_term, request_vote_replies).await;
+                        Self::count_votes(raft, quorum, current_term, request_vote_replies).await.unwrap();
                     });
                 }
             }
@@ -152,11 +153,12 @@ impl Node {
                 if *election_ticks >= election_timeout {
                     raft.become_candidate();
                     let mut request_vote_replies = raft.solicit_votes();
-                    let node = self.clone();
+
                     let quorum = raft.quorum();
                     let current_term = raft.current_term;
+                    let raft = self.raft.clone();
                     tokio::spawn(async move {
-                        node.count_votes(quorum, current_term, request_vote_replies).await;
+                        Self::count_votes(raft, quorum, current_term, request_vote_replies).await.unwrap();
                     });
                 }
             }
@@ -174,12 +176,12 @@ impl Node {
 
     /// Counts the number of votes for a candidate.
     async fn count_votes(
-        &self,
+        arc_raft: Arc<Mutex<Raft>>, 
         quorum: u64,
         current_term: u64,
         mut request_vote_replies: FuturesUnordered<impl 
             Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>>,
-    ) {
+    ) -> Result<()> {
         let mut vote_count = 1;
         while let Some(res) = request_vote_replies.next().await {
             let (term, vote_granted) = match res {
@@ -189,15 +191,99 @@ impl Node {
             if vote_granted {
                 vote_count += 1;
                 if vote_count >= quorum {
-                    self.raft.lock().unwrap().become_leader();
-                    return;
+                    let mut raft = arc_raft.lock()?;
+                    let mut work_txs = HashMap::new();
+                    for id in 0..raft.peers.len() as u64 {
+                        if id == raft.me {
+                            continue;
+                        }
+                        let (work_tx, work_rx) = mpsc::unbounded_channel();
+                        work_txs.insert(id, work_tx);
+                        tokio::spawn(Self::replicator(arc_raft.clone(), work_rx, id));
+                    }
+                    raft.become_leader(work_txs);
+                    return Ok(());
                 }
             }
             if term > current_term {
-                self.raft.lock().unwrap().become_follower(term, None);
-                return;
+                arc_raft.lock()?.become_follower(term, None);
+                return Ok(());
             }
         }
+        Ok(())
+    }
+
+    async fn replicator(
+        arc_raft: Arc<Mutex<Raft>>,
+        mut work_rx: mpsc::UnboundedReceiver<u64>,
+        id: u64
+    ) -> Result<()> {
+        while let Some(log_index) = work_rx.recv().await {
+            let raft = arc_raft.lock()?;
+
+            if log_index < raft.log.last_index {
+                continue;
+            }
+
+            if let Role::Leader { ref next_index, ref work_txs, .. } = raft.role {
+                let prev_log_index = next_index.get(id as usize).unwrap().clone() - 1;
+                let prev_log_term = raft.log.get(prev_log_index)?.map_or(0, |e| e.term);
+                let entries = raft.log
+                    .scan((prev_log_index+1)..=log_index)
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .map(|e| serialize(&e))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let args = AppendEntriesArgs {
+                    term: raft.current_term,
+                    leader_id: raft.me,
+                    prev_log_index,
+                    prev_log_term,
+                    entries,
+                    leader_commit: raft.commit_index,
+                };
+
+                let current_term = raft.current_term;
+                let work_tx = work_txs.get(&id).unwrap().clone();
+                let mut client = raft.peers[id as usize].clone();
+                let raft = arc_raft.clone();
+                tokio::spawn(async move {
+                    let (term, success) = match client.append_entries(args).await {
+                        Ok(res) => (res.get_ref().term, res.get_ref().success),
+                        Err(_) => {
+                            work_tx.send(log_index).unwrap();
+                            return;
+                        },
+                    };
+                    if term > current_term {
+                        raft.lock().unwrap().become_follower(term, None);
+                        return;
+                    }
+                    match success {
+                        true => {
+                            let mut raft = raft.lock().unwrap();
+                            if let Role::Leader { ref mut next_index, ref mut match_index, .. } = raft.role {
+                                if log_index > next_index[id as usize] {
+                                    next_index[id as usize] = log_index + 1;
+                                    match_index[id as usize] = log_index;
+                                }
+                            }
+                            // TODO: commit entries
+                        },
+                        false => {
+                            let mut raft = raft.lock().unwrap();
+                            if let Role::Leader { ref mut next_index, .. } = raft.role {
+                                next_index[id as usize] -= 1;
+                            }
+                            work_tx.send(log_index).unwrap();
+                        },
+                    }
+                });
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -257,11 +343,30 @@ impl RaftService for Node {
             return Ok(Response::new(reply));
         }
 
-        raft.become_follower(args.term, None);
+        if let Role::Candidate { .. } | Role::Leader { .. } = raft.role {
+            raft.become_follower(args.term, None);
+        }
 
         if let Role::Follower { ref mut leader, ref mut leader_seen_ticks, .. } = raft.role {
             *leader_seen_ticks = 0;
             *leader = Some(args.leader_id);
+        }
+
+        if raft.log.get(args.prev_log_index)?.map_or(true, |e| e.term != args.prev_log_term) {
+            let reply = AppendEntriesReply {
+                term: raft.current_term,
+                success: false
+            };
+            return Ok(Response::new(reply));
+        }
+
+        raft.log.splice(args.entries.iter().map(|e| deserialize(e)).collect::<Result<_>>()?)?;
+
+        if args.leader_commit > raft.commit_index {
+            let commit_index = std::cmp::min(args.leader_commit, raft.log.last_index);
+            raft.commit_index = commit_index;
+            raft.log.commit(commit_index)?;
+            // TODO: Notifies the apply_ch
         }
 
         let reply = AppendEntriesReply {
