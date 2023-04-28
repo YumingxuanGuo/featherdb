@@ -7,11 +7,13 @@ mod log;
 mod node;
 
 pub use node::Node;
+use tokio::sync::mpsc;
 pub use self::log::Log;
 
 use crate::error::{Result, Error};
-use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
+use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
+use crate::server::serialize;
 use crate::storage::log::LogDemo;
 
 use std::collections::HashMap;
@@ -49,10 +51,12 @@ pub enum Role {
     Leader {
         /// Number of ticks since last heartbeat.
         heartbeat_ticks: u64,
-        /// The next index to replicate to a peer.
-        peer_next_index: HashMap<u64, u64>,
+        /// The next index to replicate to a peer. // TODO: Hashmap
+        next_index: Vec<u64>,
         /// The last index known to be replicated on a peer.
-        peer_last_index: HashMap<u64, u64>,
+        match_index: Vec<u64>,
+        ///
+        work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>,
     },
 }
 
@@ -77,11 +81,12 @@ impl Role {
         }
     }
 
-    fn init_leader() -> Role {
+    fn init_leader(num_peers: usize, last_index: u64, work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>) -> Role {
         Role::Leader {
             heartbeat_ticks: 0,
-            peer_last_index: HashMap::new(),
-            peer_next_index: HashMap::new(),
+            next_index: vec![last_index + 1; num_peers],
+            match_index: vec![0; num_peers],
+            work_txs,
         }
     }
 }
@@ -148,7 +153,7 @@ impl Raft {
         }
     }
 
-    /// Save Raft's persistent state to stable storage,
+    /// Saves Raft's persistent state to stable storage,
     /// where it can later be retrieved after a crash and restart.
     fn persist(&mut self) {
         // Your code here (2C).
@@ -158,7 +163,7 @@ impl Raft {
         // self.persister.save_raft_state(data);
     }
 
-    /// Restore previously persisted state.
+    /// Restores previously persisted state.
     fn restore(&mut self, data: &[u8]) {
         if data.is_empty() {
             // bootstrap without any state?
@@ -176,22 +181,21 @@ impl Raft {
         // }
     }
 
-    /// Send a RequestVote RPC to a server.
-    /// Server is the index of the target server in peers.
-    /// Expects RPC arguments in args.
-    async fn send_request_vote(
-        &self,
-        server: usize,
-        args: RequestVoteArgs,
-    ) -> Result<tonic::Response<RequestVoteReply>> {
-        Ok(self.peers[server].clone().request_vote(args).await?)
-    }
-
     fn start(&mut self, command: Option<Vec<u8>>) -> Result<(u64, u64)> {
         let index = self.log.last_index + 1;
         let term = self.current_term;
         self.log.append(term, command)?;
-        // TODO: replicate logs
+        for id in 0..self.peers.len() as u64 {
+            if id == self.me {
+                continue;
+            }
+            if let Role::Leader { ref work_txs, .. } = self.role {
+                let tx = work_txs.get(&id).unwrap();
+                tx.send(index)?;
+            } else {
+                return Err(Error::Internal(format!("{} is not leader", self.me)));
+            }
+        }
         Ok((index, term))
     }
 }
@@ -216,13 +220,18 @@ impl Raft {
         self.persist();
     }
 
-    pub fn become_leader(&mut self) {
-        self.role = Role::init_leader();
+    pub fn become_leader(&mut self, work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>) {
+        self.role = Role::init_leader(
+            self.peers.len(), 
+            self.log.last_index,
+            work_txs,
+        );
         self.persist();
     }
 
-    /// Solicit votes from other nodes.
-    pub fn solicit_votes(&self) -> FuturesUnordered<impl Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>> {
+    /// Solicits votes from other nodes.
+    pub fn solicit_votes(&self) -> 
+        FuturesUnordered<impl Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>> {
         let mut futures = FuturesUnordered::new();
         for i in 0..self.peers.len() {
             if i as u64 == self.me {
@@ -242,7 +251,7 @@ impl Raft {
         futures
     }
 
-    /// Send heartbeats to other nodes.
+    /// Sends heartbeats to other nodes.
     pub fn send_heartbeats(&self) {
         for i in 0..self.peers.len() {
             if i as u64 == self.me {
@@ -252,6 +261,10 @@ impl Raft {
             let args = AppendEntriesArgs {
                 term: self.current_term,
                 leader_id: self.me,
+                prev_log_index: 0,
+                prev_log_term: 0,
+                entries: vec![],
+                leader_commit: self.commit_index,
             };
             tokio::spawn(async move {
                 client.append_entries(args).await
