@@ -7,6 +7,7 @@ use std::time::Duration;
 use featherdb::error::{Error, Result};
 use featherdb::raft::Node;
 
+/// Set up a cluster of `cluster_size` nodes.
 async fn setup(cluster_size: u64) -> Result<Cluster> {
     let (tx, rx) = mpsc::channel();
     for i in 0..cluster_size {
