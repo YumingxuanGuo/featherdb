@@ -5,9 +5,9 @@
 
 mod log;
 mod node;
+mod state;
 
 pub use node::Node;
-use tokio::sync::mpsc;
 pub use self::log::Log;
 
 use crate::error::{Result, Error};
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use futures::Future;
 use futures::stream::FuturesUnordered;
 use rand::Rng;
+use tokio::sync::mpsc;
 use tonic::{Response, Status};
 use tonic::transport::Channel;
 
