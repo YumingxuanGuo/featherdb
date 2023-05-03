@@ -1,8 +1,8 @@
 use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::error::{Error, Result};
-use super::Entry;
+use crate::error::Result;
 
 /// A Raft-managed state machine.
 pub trait State: Send {
@@ -36,12 +36,48 @@ pub enum ResponseMsg {
     },
 }
 
-/// Drives a state machine, taking operations from state_rx and sending results via node_tx.
+/// Drives a state machine, taking operations from `apply_rx` and sending results via `dispatcher_tx`.
 pub struct Driver {
-    /// The state machine to drive.
+    /// The state machine.
     state: Box<dyn State>,
     /// The channel to receive state machine operations from.
-    state_rx: mpsc::UnboundedReceiver<ApplyMsg>,
+    apply_rx: UnboundedReceiverStream<ApplyMsg>,
     /// The channel to send state machine results to.
-    node_tx: mpsc::UnboundedSender<ResponseMsg>,
+    dispatcher_tx: mpsc::UnboundedSender<ResponseMsg>,
+}
+
+impl Driver {
+    /// Creates a new state machine driver.
+    pub fn new(
+        state: Box<dyn State>,
+        apply_rx: mpsc::UnboundedReceiver<ApplyMsg>,
+        dispatcher_tx: mpsc::UnboundedSender<ResponseMsg>,
+    ) -> Self {
+        Self {
+            state,
+            apply_rx: UnboundedReceiverStream::new(apply_rx),
+            dispatcher_tx,
+        }
+    }
+
+    /// Drives a state machine.
+    pub async fn drive(mut self) -> Result<()> {
+        while let Some(msg) = self.apply_rx.next().await {
+            if let Err(e) = self.execute(msg) {
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Executes a state machine apply message and sends the result to the dispatcher.
+    fn execute(&mut self, apply_msg: ApplyMsg) -> Result<()> {
+        match apply_msg {
+            ApplyMsg::Command { session_id, log_index, command } => {
+                let result = self.state.execute(log_index, command);
+                self.dispatcher_tx.send(ResponseMsg::Command { session_id, log_index, result })?;
+            }
+        }
+        Ok(())
+    }
 }
