@@ -8,7 +8,8 @@ mod node;
 mod state;
 
 pub use node::Node;
-pub use self::log::Log;
+pub use self::log::{Log, Entry};
+pub use self::state::State;
 
 use crate::error::{Result, Error};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply};
