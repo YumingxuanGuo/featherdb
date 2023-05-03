@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use futures::FutureExt;
 use futures::{stream::FuturesUnordered, Future};
 use rand::Rng;
 use tokio::sync::mpsc;
@@ -14,7 +13,7 @@ use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
 use crate::server::{deserialize, serialize};
-use super::{Raft, Role, HEARTBEAT_INTERVAL};
+use super::{Raft, Role, HEARTBEAT_INTERVAL, ApplyMsg};
 
 // An interceptor function. TODO: use layer instead.
 fn intercept(req: Request<()>) -> core::result::Result<Request<()>, Status> {
@@ -34,8 +33,15 @@ pub struct Node {
 
 impl Node {
     /// Create a new raft service. TODO: Set up the raft server according to the config.
-    pub async fn new(me: u64, peers: Vec<String>) -> Result<Node> {
-        let node = Node { raft: Arc::new(Mutex::new(Raft::new()?)) };
+    pub async fn new(
+        me: u64,
+        peers: Vec<String>,
+        apply_tx: mpsc::UnboundedSender<ApplyMsg>,
+    ) -> Result<Node> {
+        let node = Node { raft: Arc::new(Mutex::new(Raft::new(
+            me,
+            apply_tx
+        )?)) };
         let node_clone = node.clone();
 
         let layer = tower::ServiceBuilder::new()
@@ -69,13 +75,10 @@ impl Node {
                 addr.push_str(&peers[i]);
                 let channel = match Channel::from_shared(addr).unwrap().connect().await {
                     Ok(channel) => channel,
-                    Err(err) => {
-                        continue;
-                    },
+                    Err(_) => { continue; },
                 };
-                let mut client = RaftServiceClient::new(channel);
+                let client = RaftServiceClient::new(channel);
                 let mut raft = node.raft.lock()?;
-                raft.me = me;
                 raft.peers.push(client);
                 conns[i] = true;
             }
@@ -86,7 +89,7 @@ impl Node {
     }
 
     /// Start the Raft server. This method should not return until shutdown.
-    pub async fn serve(&self) -> Result<()> {
+    pub async fn serve(self) -> Result<()> {
         loop {
             tokio::time::sleep(Duration::from_millis(100)).await;
             self.tick().unwrap();
@@ -138,7 +141,7 @@ impl Node {
                 *leader_seen_ticks += 1;
                 if *leader_seen_ticks >= leader_seen_timeout {
                     raft.become_candidate();
-                    let mut request_vote_replies = raft.solicit_votes();
+                    let request_vote_replies = raft.solicit_votes();
 
                     let quorum = raft.quorum();
                     let current_term = raft.current_term;
@@ -152,7 +155,7 @@ impl Node {
                 *election_ticks += 1;
                 if *election_ticks >= election_timeout {
                     raft.become_candidate();
-                    let mut request_vote_replies = raft.solicit_votes();
+                    let request_vote_replies = raft.solicit_votes();
 
                     let quorum = raft.quorum();
                     let current_term = raft.current_term;

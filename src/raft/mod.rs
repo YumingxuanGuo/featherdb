@@ -1,7 +1,5 @@
 #![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(unused_variables)]
-#![allow(unused_mut)]
 
 mod log;
 mod node;
@@ -10,12 +8,11 @@ mod state;
 
 pub use node::Node;
 pub use self::log::{Log, Entry};
-pub use self::state::State;
+pub use self::state::{ApplyMsg, Driver, ResponseMsg, State};
 
 use crate::error::{Result, Error};
-use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply};
+use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
-use crate::server::serialize;
 use crate::storage::log::LogDemo;
 
 use std::collections::HashMap;
@@ -64,7 +61,7 @@ pub enum Role {
 }
 
 impl Role {
-    fn init_follower() -> Role {
+    fn init_follower(leader: Option<u64>) -> Role {
         Role::Follower {
             leader: None,
             leader_seen_ticks: 0,
@@ -125,11 +122,11 @@ impl Raft {
     /// This method must return quickly.
     /// TODO: improve the function signature
     pub fn new(
-        // me: u64,
+        me: u64,
         // log: Log,
         // peers: Vec<RaftClient>,
         // persister: Box<dyn Persister>,
-        // apply_ch: UnboundedSender<ApplyMsg>,
+        apply_ch: mpsc::UnboundedSender<ApplyMsg>,
     ) -> Result<Raft> {
         let raft = Raft {
             peers: vec![],
@@ -143,7 +140,7 @@ impl Raft {
             commit_index: 0,
             last_applied: 0,
 
-            role: Role::init_follower(),
+            role: Role::init_follower(None),
         };
 
         Ok(raft)
@@ -212,7 +209,7 @@ impl Raft {
     pub fn become_follower(&mut self, term: u64, leader_id: Option<u64>) {
         self.current_term = term;
         self.voted_for = None;
-        self.role = Role::init_follower();
+        self.role = Role::init_follower(leader_id);
         self.persist();
     }
 
@@ -235,7 +232,7 @@ impl Raft {
     /// Solicits votes from other nodes.
     pub fn solicit_votes(&self) -> 
         FuturesUnordered<impl Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>> {
-        let mut futures = FuturesUnordered::new();
+        let futures = FuturesUnordered::new();
         for i in 0..self.peers.len() {
             if i as u64 == self.me {
                 continue;

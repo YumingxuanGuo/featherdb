@@ -23,6 +23,7 @@ async fn setup(cluster_size: u64) -> Result<Cluster> {
                         "127.0.0.1:50058".to_string(),
                         "127.0.0.1:50059".to_string(),
                     ],
+                    todo!(),
                 ).await.unwrap();
                 tx.send(node.clone()).unwrap();
                 drop(tx);
