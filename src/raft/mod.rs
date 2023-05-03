@@ -5,6 +5,7 @@
 
 mod log;
 mod node;
+mod server;
 mod state;
 
 pub use node::Node;
