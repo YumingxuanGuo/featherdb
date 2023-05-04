@@ -3,6 +3,7 @@ use std::ops::RangeBounds;
 use serde::{Deserialize, Serialize};
 
 use crate::{storage::log::{LogStore, Range}, error::{Result, Error}};
+use super::Command;
 
 /// A replicated log entry
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -12,7 +13,7 @@ pub struct Entry {
     /// The term in which the entry was added.
     pub term: u64,
     /// The state machine command. None is used to commit noops during leader election.
-    pub command: Option<Vec<u8>>,
+    pub command: Command,
 }
 
 pub type Scan<'a> = Box<dyn Iterator<Item = Result<Entry>> + 'a>;
@@ -55,7 +56,7 @@ impl Log {
     }
 
     /// Appends a command to the log, returning the entry.
-    pub fn append(&mut self, term: u64, command: Option<Vec<u8>>) -> Result<Entry> {
+    pub fn append(&mut self, term: u64, command: Command) -> Result<Entry> {
         let entry = Entry { index: self.last_index + 1, term, command };
         self.store.append(Self::serialize(&entry)?)?;
         self.last_index = entry.index;
