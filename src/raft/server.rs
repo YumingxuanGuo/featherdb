@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_util::FutureExt;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -74,11 +75,19 @@ impl Dispatcher {
                     if let Some(session) = sessions.get_mut(&session_id) {
                         session.send(ResponseMsg::Command { session_id, log_index, result })?;
                     }
+                    // If session does not exist in this server (i.e., not leader), we just drop the result.
                 }
             }
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A Raft session command.
+pub struct Command {
+    pub session_id: u64,
+    pub operation: Vec<u8>,
 }
 
 /// A Raft session.
