@@ -13,7 +13,7 @@ use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
 use crate::server::{deserialize, serialize};
-use super::{Raft, Role, HEARTBEAT_INTERVAL, ApplyMsg};
+use super::{Raft, Role, HEARTBEAT_INTERVAL, ApplyMsg, Command, Entry};
 
 // An interceptor function. TODO: use layer instead.
 fn intercept(req: Request<()>) -> core::result::Result<Request<()>, Status> {
@@ -108,7 +108,7 @@ impl Node {
     /// at if it's ever committed; the second is the current term.
     ///
     /// This method must return without blocking on the raft.
-    pub fn start(&self, command: Option<Vec<u8>>) -> Result<(u64, u64)> {
+    pub fn start(&self, command: Command) -> Result<(u64, u64)> {
         let mut raft = self.raft.lock()?;
         if !raft.is_leader() {
             return Err(Error::NotLeader);
@@ -229,7 +229,7 @@ impl Node {
             }
 
             if let Role::Leader { ref next_index, ref work_txs, .. } = raft.role {
-                let prev_log_index = next_index.get(id as usize).unwrap().clone() - 1;
+                let prev_log_index = next_index.get(&id).unwrap() - 1;
                 let prev_log_term = raft.log.get(prev_log_index)?.map_or(0, |e| e.term);
                 let entries = raft.log
                     .scan((prev_log_index+1)..=log_index)
@@ -266,18 +266,44 @@ impl Node {
                     match success {
                         true => {
                             let mut raft = raft.lock().unwrap();
+                            let original_commit_index = raft.commit_index;
                             if let Role::Leader { ref mut next_index, ref mut match_index, .. } = raft.role {
-                                if log_index > next_index[id as usize] {
-                                    next_index[id as usize] = log_index + 1;
-                                    match_index[id as usize] = log_index;
+                                if log_index > next_index[&id] {
+                                    next_index.entry(id).and_modify(|index| *index = log_index + 1);
+                                    match_index.entry(id).and_modify(|index| *index = log_index);
                                 }
+
+                                // Checks if there are entries ready to be committed.
+                                let mut match_indexes = match_index.values().cloned().collect::<Vec<_>>();
+                                match_indexes.push(raft.log.last_index);
+                                match_indexes.sort_unstable();
+                                let mut new_commit_index = match_indexes[raft.quorum() as usize - 1];
+                                while let Some(entry) = raft.log.get(new_commit_index).unwrap() {
+                                    if entry.term == raft.current_term {
+                                        break;
+                                    }
+                                    new_commit_index -= 1;
+                                }
+                                if new_commit_index > original_commit_index {
+                                    let entries = raft.log
+                                        .scan((original_commit_index+1)..=new_commit_index)
+                                        .collect::<Result<Vec<_>>>()
+                                        .unwrap();
+                                    for Entry { index, term, command } in entries {
+                                        raft.apply_tx.send(ApplyMsg::Command {
+                                            log_index: index,
+                                            command,
+                                        }).unwrap();
+                                    }
+                                }
+                                
                             }
-                            // TODO: commit entries
                         },
+
                         false => {
                             let mut raft = raft.lock().unwrap();
                             if let Role::Leader { ref mut next_index, .. } = raft.role {
-                                next_index[id as usize] -= 1;
+                                next_index.entry(id).and_modify(|index| *index -= 1);
                             }
                             work_tx.send(log_index).unwrap();
                         },
@@ -365,11 +391,24 @@ impl RaftService for Node {
 
         raft.log.splice(args.entries.iter().map(|e| deserialize(e)).collect::<Result<_>>()?)?;
 
+        // Commits entries if necessary.
         if args.leader_commit > raft.commit_index {
             let commit_index = std::cmp::min(args.leader_commit, raft.log.last_index);
+            for index in (raft.commit_index + 1)..=commit_index {
+                let Entry {index, term, command} = raft.log.get(index)?
+                    .ok_or(Error::Internal(format!("Expected entry at index {}", index)))?;
+                match raft.apply_tx.send(ApplyMsg::Command {
+                    log_index: index,
+                    command,
+                }) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        return Err(Status::internal(format!("Failed to send apply msg: {}", e)));
+                    },
+                }
+            }
             raft.commit_index = commit_index;
             raft.log.commit(commit_index)?;
-            // TODO: Notifies the apply_ch
         }
 
         let reply = AppendEntriesReply {
