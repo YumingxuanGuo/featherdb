@@ -51,11 +51,11 @@ pub enum Role {
     Leader {
         /// Number of ticks since last heartbeat.
         heartbeat_ticks: u64,
-        /// The next index to replicate to a peer. // TODO: Hashmap
-        next_index: Vec<u64>,
+        /// The next index to replicate to a peer.
+        next_index: HashMap<u64, u64>,
         /// The last index known to be replicated on a peer.
-        match_index: Vec<u64>,
-        ///
+        match_index: HashMap<u64, u64>,
+        /// The channel to send work to.
         work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>,
     },
 }
@@ -81,11 +81,25 @@ impl Role {
         }
     }
 
-    fn init_leader(num_peers: usize, last_index: u64, work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>) -> Role {
+    fn init_leader(
+        me: u64,
+        num_peers: usize,
+        last_index: u64,
+        work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>
+    ) -> Role {
+        let mut next_index = HashMap::new();
+        let mut match_index = HashMap::new();
+        for i in 0..num_peers as u64 {
+            if i == me {
+                continue;
+            }
+            next_index.insert(i, last_index + 1);
+            match_index.insert(i, 0);
+        };
         Role::Leader {
             heartbeat_ticks: 0,
-            next_index: vec![last_index + 1; num_peers],
-            match_index: vec![0; num_peers],
+            next_index,
+            match_index,
             work_txs,
         }
     }
@@ -94,9 +108,9 @@ impl Role {
 /// A single Raft node.
 pub struct Raft {
     peers: Vec<RaftServiceClient<Channel>>,
-    // persister
-
+    apply_tx: mpsc::UnboundedSender<ApplyMsg>,
     me: u64,
+    // persister
 
     /// Persistent state on all servers:
     current_term: u64,
@@ -117,20 +131,21 @@ impl Raft {
     /// server's port is `peers[me]`. All the servers' peers arrays
     /// have the same order. `Persister` is a place for this server to
     /// save its persistent state, and also initially holds the most
-    /// recent saved state, if any. `Apply_ch` is a channel on which the
+    /// recent saved state, if any. `apply_tx` is a channel on which the
     /// tester or service expects Raft to send `ApplyMsg` messages.
     /// This method must return quickly.
     /// TODO: improve the function signature
     pub fn new(
         me: u64,
+        apply_tx: mpsc::UnboundedSender<ApplyMsg>,
         // log: Log,
         // peers: Vec<RaftClient>,
         // persister: Box<dyn Persister>,
-        apply_ch: mpsc::UnboundedSender<ApplyMsg>,
     ) -> Result<Raft> {
         let raft = Raft {
             peers: vec![],
             // persister,
+            apply_tx,
             me: 0,
 
             current_term: 0,
@@ -222,6 +237,7 @@ impl Raft {
 
     pub fn become_leader(&mut self, work_txs: HashMap<u64, mpsc::UnboundedSender<u64>>) {
         self.role = Role::init_leader(
+            self.me,
             self.peers.len(), 
             self.log.last_index,
             work_txs,
