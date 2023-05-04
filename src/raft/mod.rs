@@ -6,9 +6,10 @@ mod node;
 mod server;
 mod state;
 
-pub use node::Node;
+pub use self::node::Node;
 pub use self::log::{Log, Entry};
 pub use self::state::{ApplyMsg, Driver, ResponseMsg, State};
+pub use self::server::{Command, RaftServer};
 
 use crate::error::{Result, Error};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
@@ -196,7 +197,7 @@ impl Raft {
         // }
     }
 
-    fn start(&mut self, command: Option<Vec<u8>>) -> Result<(u64, u64)> {
+    fn start(&mut self, command: Command) -> Result<(u64, u64)> {
         let index = self.log.last_index + 1;
         let term = self.current_term;
         self.log.append(term, command)?;
