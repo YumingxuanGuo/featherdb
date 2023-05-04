@@ -4,14 +4,16 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::error::Result;
 
+use super::Command;
+
 /// A Raft-managed state machine.
 pub trait State: Send {
     /// Returns the last applied index from the state machine, used when initializing the driver.
     fn applied_index(&self) -> u64;
 
-    /// Executes the given command. If the state machine returns Error::Internal, the Raft node
+    /// Executes the given operation. If the state machine returns Error::Internal, the Raft node
     /// halts. For any other error, the state is applied and the error propagated to the caller.
-    fn execute(&mut self, index: u64, command: Vec<u8>) -> Result<Vec<u8>>;
+    fn execute(&mut self, index: u64, operation: Vec<u8>) -> Result<Vec<u8>>;
 }
 
 /// A Raft state machine apply message.
@@ -19,9 +21,8 @@ pub trait State: Send {
 pub enum ApplyMsg {
     /// A command to apply.
     Command {
-        session_id: u64,
         log_index: u64,
-        command: Vec<u8>
+        command: Command,
     },
 }
 
@@ -30,8 +31,8 @@ pub enum ApplyMsg {
 pub enum ResponseMsg {
     /// A response to a command.
     Command {
-        session_id: u64,
         log_index: u64,
+        session_id: u64,
         result: Result<Vec<u8>>
     },
 }
@@ -73,10 +74,11 @@ impl Driver {
     /// Executes a state machine apply message and sends the result to the dispatcher.
     fn execute(&mut self, apply_msg: ApplyMsg) -> Result<()> {
         match apply_msg {
-            ApplyMsg::Command { session_id, log_index, command } => {
-                let result = self.state.execute(log_index, command);
-                self.dispatcher_tx.send(ResponseMsg::Command { session_id, log_index, result })?;
-            }
+            ApplyMsg::Command { log_index, command } => {
+                let Command { session_id, operation } = command;
+                let result = self.state.execute(log_index, operation);
+                self.dispatcher_tx.send(ResponseMsg::Command { log_index, session_id, result })?;
+            },
         }
         Ok(())
     }
