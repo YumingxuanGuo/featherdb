@@ -268,7 +268,7 @@ impl Node {
                             let mut raft = raft.lock().unwrap();
                             let original_commit_index = raft.commit_index;
                             if let Role::Leader { ref mut next_index, ref mut match_index, .. } = raft.role {
-                                if log_index > next_index[&id] {
+                                if log_index > match_index[&id] {
                                     next_index.entry(id).and_modify(|index| *index = log_index + 1);
                                     match_index.entry(id).and_modify(|index| *index = log_index);
                                 }
@@ -295,6 +295,7 @@ impl Node {
                                             command,
                                         }).unwrap();
                                     }
+                                    raft.commit_index = new_commit_index;
                                 }
                                 
                             }
@@ -381,7 +382,8 @@ impl RaftService for Node {
             *leader = Some(args.leader_id);
         }
 
-        if raft.log.get(args.prev_log_index)?.map_or(true, |e| e.term != args.prev_log_term) {
+        if args.prev_log_index != 0 && 
+            raft.log.get(args.prev_log_index)?.map_or(true, |e| e.term != args.prev_log_term) {
             let reply = AppendEntriesReply {
                 term: raft.current_term,
                 success: false

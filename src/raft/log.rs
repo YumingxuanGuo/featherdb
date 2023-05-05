@@ -66,7 +66,8 @@ impl Log {
 
     /// Commits entries up to and including an index.
     pub fn commit(&mut self, index: u64) -> Result<u64> {
-        todo!()
+        // todo!()
+        Ok(0)
     }
 
     /// Fetches an entry at an index.

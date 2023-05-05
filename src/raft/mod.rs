@@ -147,7 +147,7 @@ impl Raft {
             peers: vec![],
             // persister,
             apply_tx,
-            me: 0,
+            me,
 
             current_term: 0,
             voted_for: None,
