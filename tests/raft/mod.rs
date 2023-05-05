@@ -1,20 +1,24 @@
 mod leader_election;
+mod log_replication;
 
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use featherdb::error::{Error, Result};
-use featherdb::raft::Node;
+use featherdb::raft::{Node, ApplyMsg};
+use tokio::sync::mpsc;
 
 /// Set up a cluster of `cluster_size` nodes.
 async fn setup(cluster_size: u64) -> Result<Cluster> {
-    let (tx, rx) = mpsc::channel();
+    let (node_tx, node_rx) = std::sync::mpsc::channel();
+    let (apply_ch_tx, apply_ch_rx) = std::sync::mpsc::channel();
     for i in 0..cluster_size {
-        let tx = tx.clone();
+        let node_tx = node_tx.clone();
+        let apply_ch_tx = apply_ch_tx.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
+                let (apply_tx, apply_rx) = mpsc::unbounded_channel();
                 let node = Node::new(
                     i,
                     // TODO: make this configurable
@@ -23,10 +27,12 @@ async fn setup(cluster_size: u64) -> Result<Cluster> {
                         "127.0.0.1:50058".to_string(),
                         "127.0.0.1:50059".to_string(),
                     ],
-                    todo!(),
+                    apply_tx,
                 ).await.unwrap();
-                tx.send(node.clone()).unwrap();
-                drop(tx);
+                node_tx.send(node.clone()).unwrap();
+                drop(node_tx);
+                apply_ch_tx.send(apply_rx).unwrap();
+                drop(apply_ch_tx);
                 node.serve().await.unwrap();
             })
         });
@@ -34,16 +40,24 @@ async fn setup(cluster_size: u64) -> Result<Cluster> {
 
     let mut nodes = vec![];
     for _ in 0..cluster_size {
-        nodes.push(rx.recv().unwrap());
+        let node = node_rx.recv().unwrap();
+        let apply_rx = apply_ch_rx.recv().unwrap();
+        nodes.push(RaftNode { node, apply_rx });
     }
-    nodes.sort_by(|a, b| a.id().unwrap().cmp(&b.id().unwrap()));
+    nodes.sort_by(|a, b| a.node.id().unwrap().cmp(&b.node.id().unwrap()));
     
     Ok(Cluster { nodes })
 }
 
 /// A cluster of raft nodes.
 pub struct Cluster {
-    pub nodes: Vec<Node>,
+    pub nodes: Vec<RaftNode>,
+}
+
+/// A raft node with a simulated state machine channel.
+pub struct RaftNode {
+    pub node: Node,
+    pub apply_rx: mpsc::UnboundedReceiver<ApplyMsg>,
 }
 
 impl Cluster {
@@ -54,8 +68,9 @@ impl Cluster {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
             let mut termed_leaders = HashMap::<u64, Vec<u64>>::new();
-            for node in &self.nodes {
+            for RaftNode {node, apply_rx: _} in &self.nodes {
                 if node.is_leader()? {
+                    println!("node {} is leader", node.id()?);
                     termed_leaders.entry(node.term()?).or_default().push(node.id()?);
                 }
             }
@@ -83,5 +98,11 @@ impl Cluster {
         }
         
         Err(Error::Internal("Expected one leader, got none.".to_string()))
+    }
+
+    async fn check_consensus(&self) -> Result<()> {
+
+
+        Ok(())
     }
 }
