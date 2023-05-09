@@ -182,7 +182,7 @@ impl raft::State for StateMachine {
         self.applied_index
     }
 
-    fn execute(&mut self, index: u64, command: Vec<u8>) -> Result<Vec<u8>> {
+    fn execute(&mut self, index: u64, operation: Vec<u8>) -> Result<Vec<u8>> {
         todo!()
     }
 }

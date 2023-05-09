@@ -8,10 +8,10 @@ mod state;
 
 pub use self::node::Node;
 pub use self::log::{Log, Entry};
-pub use self::state::{ApplyMsg, Driver, ResponseMsg, State};
-pub use self::server::{Command, RaftServer};
+pub use self::state::{ApplyMsg, Driver, State};
+pub use self::server::{Command, KvSession, Task};
 
-use crate::error::{Result, Error};
+use crate::error::{Result, Error, RpcResult};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::storage::log::LogDemo;
@@ -21,7 +21,6 @@ use futures::Future;
 use futures::stream::FuturesUnordered;
 use rand::Rng;
 use tokio::sync::mpsc;
-use tonic::{Response, Status};
 use tonic::transport::Channel;
 
 /// The interval between leader heartbeats, in ticks.
@@ -248,7 +247,7 @@ impl Raft {
 
     /// Solicits votes from other nodes.
     pub fn solicit_votes(&self) -> 
-        FuturesUnordered<impl Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>> {
+        FuturesUnordered<impl Future<Output = RpcResult<RequestVoteReply>>> {
         let futures = FuturesUnordered::new();
         for i in 0..self.peers.len() {
             if i as u64 == self.me {

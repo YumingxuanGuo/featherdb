@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::{Server, Channel};
 use tonic::{Response, Status, Request};
 
-use crate::error::{Result, Error};
+use crate::error::{Result, Error, RpcResult};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
@@ -183,7 +183,7 @@ impl Node {
         quorum: u64,
         current_term: u64,
         mut request_vote_replies: FuturesUnordered<impl 
-            Future<Output = core::result::Result<Response<RequestVoteReply>, Status>>>,
+            Future<Output = RpcResult<RequestVoteReply>>>,
     ) -> Result<()> {
         let mut vote_count = 1;
         while let Some(res) = request_vote_replies.next().await {
@@ -290,10 +290,11 @@ impl Node {
                                         .collect::<Result<Vec<_>>>()
                                         .unwrap();
                                     for Entry { index, term, command } in entries {
-                                        raft.apply_tx.send(ApplyMsg::Command {
+                                        let apply_msg = ApplyMsg {
                                             log_index: index,
                                             command,
-                                        }).unwrap();
+                                        };
+                                        raft.apply_tx.send(apply_msg).unwrap();
                                     }
                                     raft.commit_index = new_commit_index;
                                 }
@@ -323,7 +324,7 @@ impl RaftService for Node {
     async fn request_vote(
         &self,
         request: Request<RequestVoteArgs>,
-    ) -> core::result::Result<Response<RequestVoteReply>, Status> {
+    ) -> RpcResult<RequestVoteReply> {
         let mut raft = self.raft.lock().unwrap();
         let args = request.into_inner();
 
@@ -361,7 +362,7 @@ impl RaftService for Node {
     async fn append_entries(
         &self,
         request: Request<AppendEntriesArgs>,
-    ) -> core::result::Result<Response<AppendEntriesReply>, Status> {
+    ) -> RpcResult<AppendEntriesReply> {
         let mut raft = self.raft.lock().unwrap();
         let args = request.into_inner();
 
@@ -399,10 +400,11 @@ impl RaftService for Node {
             for index in (raft.commit_index + 1)..=commit_index {
                 let Entry {index, term, command} = raft.log.get(index)?
                     .ok_or(Error::Internal(format!("Expected entry at index {}", index)))?;
-                match raft.apply_tx.send(ApplyMsg::Command {
+                let apply_msg = ApplyMsg {
                     log_index: index,
                     command,
-                }) {
+                };
+                match raft.apply_tx.send(apply_msg) {
                     Ok(_) => {},
                     Err(e) => {
                         return Err(Status::internal(format!("Failed to send apply msg: {}", e)));
