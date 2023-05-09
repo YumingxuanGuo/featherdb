@@ -66,8 +66,13 @@ impl Log {
 
     /// Commits entries up to and including an index.
     pub fn commit(&mut self, index: u64) -> Result<u64> {
-        // todo!()
-        Ok(0)
+        let entry = self
+            .get(index)?
+            .ok_or_else(|| Error::Internal(format!("Entry {} not found", index)))?;
+        self.store.commit(index)?;
+        self.commit_index = entry.index;
+        self.commit_term = entry.term;
+        Ok(index)
     }
 
     /// Fetches an entry at an index.
