@@ -9,3 +9,7 @@ pub mod session {
 pub mod raft {
     tonic::include_proto!("raft");
 }
+
+pub mod raft_server {
+    tonic::include_proto!("raft_server");
+}
