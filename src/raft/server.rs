@@ -4,36 +4,54 @@ use std::sync::{Arc, Mutex};
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tonic::{Request, Response, Status};
 
-use crate::error::Result;
-use super::{Node, Driver, ResponseMsg, State};
+use crate::error::{Result, RpcResult};
+use crate::proto::raft_server::{RegistrationRequest, RegistrationReply, ExecutionReply, ExecutionRequest};
+use crate::proto::raft_server::raft_server_server::RaftServer;
+use super::{Node, Driver, State};
 
-/// A Raft server.
-pub struct RaftServer {
-    /// The underlying Raft node.
-    node : Node,
-    /// The state machine driver.
-    driver: Driver,
-    /// The session dispatcher.
-    dispatcher: Dispatcher,
-    /// The ongoing sessions.
-    sessions: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseMsg>>>>,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A Raft session command.
+pub enum Command {
+    Operation {
+        session_id: u64,
+        sequence_number: u64,
+        operation: Vec<u8>,
+    },
+    Registration {
+        session_id: u64,
+    },
 }
 
-impl RaftServer {
+/// A Raft-based key-value server.
+pub struct KvServer {
+    /// The underlying Raft node.
+    node: Node,
+    /// The state machine driver.
+    driver: Driver,
+    /// The next session ID, incrementing from 1.
+    next_session_id: Arc<Mutex<u64>>,
+    /// The channel to receive registration result from.
+    registration_status: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<()>>>>,
+    /// The ongoing sessions.
+    sessions: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<Result<Vec<u8>>>>>>,
+}
+
+impl KvServer {
     /// Creates a new Raft server.
     pub async fn new(
         state: Box<dyn State>,
     ) -> Result<Self> {
         let (apply_tx, apply_rx) = mpsc::unbounded_channel();
-        let (dispatcher_tx, dispatcher_rx) = mpsc::unbounded_channel();
+        let registration_status = Arc::new(Mutex::new(HashMap::new()));
+        let node = Node::new(0, vec![], apply_tx).await?;   // TODO: Better signature for Node::new()
         Ok(Self {
-            node: Node::new(0, vec![], apply_tx).await?,
-            driver: Driver::new(state, apply_rx, dispatcher_tx),
-            dispatcher: Dispatcher::new(dispatcher_rx),
+            driver: Driver::new(node.clone(), state, apply_rx, registration_status.clone()),
+            next_session_id: Arc::new(Mutex::new(1)),
+            registration_status,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            node,
         })
     }
 
@@ -44,53 +62,83 @@ impl RaftServer {
 
         let (task, node) = self.node.serve().remote_handle();
         tokio::spawn(task);
-
-        let sessions = self.sessions.clone();
-        let (task, dispatcher) = self.dispatcher.dispatch(sessions).remote_handle();
-        tokio::spawn(task);
         
-        tokio::try_join!(driver, node, dispatcher)?;
+        tokio::try_join!(driver, node)?;
         Ok(())
     }
 }
 
-/// A session dispatcher, taking operations from `dispatcher_rx` and sending results via `sessions`.
-pub struct Dispatcher {
-    /// The channel to receive state machine results from.
-    dispatcher_rx: UnboundedReceiverStream<ResponseMsg>,
-}
-
-impl Dispatcher {
-    /// Creates a new session dispatcher.
-    pub fn new(dispatcher_rx: mpsc::UnboundedReceiver<ResponseMsg>) -> Self {
-        Self { dispatcher_rx: UnboundedReceiverStream::new(dispatcher_rx) }
-    }
-
-    /// Starts the session dispatcher.
-    pub async fn dispatch(mut self, sessions: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseMsg>>>>) -> Result<()> {
-        while let Some(msg) = self.dispatcher_rx.next().await {
-            match msg {
-                ResponseMsg::Command { session_id, log_index, result } => {
-                    let mut sessions = sessions.lock().unwrap();
-                    if let Some(session) = sessions.get_mut(&session_id) {
-                        session.send(ResponseMsg::Command { session_id, log_index, result })?;
-                    }
-                    // If session does not exist in this server (i.e., not leader), we just drop the result.
-                }
-            }
+#[tonic::async_trait]
+impl RaftServer for KvServer {
+    async fn register(&self, request: Request<RegistrationRequest>) -> RpcResult<RegistrationReply> {
+        // TODO: Better code structure
+        if !self.node.is_leader()? {
+            return Err(Status::internal("[NotLeader]"));
         }
-        Ok(())
+
+        let session_id = {
+            let mut guard = self.next_session_id.lock().unwrap();
+            *guard += 1;
+            *guard - 1
+        };
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        {
+            self.registration_status.lock().unwrap().insert(session_id, tx);
+        }
+
+        self.node.start(Command::Registration { session_id })?;
+
+        // TODO: Timeout and retry
+        rx.recv().await;
+
+        return Ok(Response::new(RegistrationReply { status: vec![], client_id: session_id, leader_hint: 0 }));
+    }
+
+    async fn execute(&self, request: Request<ExecutionRequest>) -> RpcResult<ExecutionReply> {
+        todo!()
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-/// A Raft session command.
-pub struct Command {
-    pub session_id: u64,
-    pub operation: Vec<u8>,
+/// A task for a key-value session.
+pub struct Task {
+
 }
 
-/// A Raft session.
-pub struct RaftSession {
+/// A Raft-based key-value session.
+pub struct KvSession {
+    /// The underlying Raft node.
+    node: Node,
+    /// The session ID.
+    session_id: u64,
+    /// The channel to receive task from.
+    task_rx: mpsc::UnboundedReceiver<Task>,
+    /// The channel to receive state machine result from.
+    result_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
+}
 
+impl KvSession {
+    /// Creates a new Raft session.
+    pub fn new(
+        node: Node,
+        session_id: u64,
+        task_rx: mpsc::UnboundedReceiver<Task>,
+        result_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
+    ) -> Self {
+        Self {
+            node,
+            session_id,
+            task_rx,
+            result_rx,
+        }
+    }
+
+    /// Starts the Raft session.
+    pub async fn serve(mut self) -> Result<()> {
+        while let Some(task) = self.task_rx.recv().await {
+            todo!()
+        }
+
+        Ok(())
+    }
 }
