@@ -4,6 +4,9 @@ use std::fmt::{self, Display};
 /// Result returning Error
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// RPC-Result returning Error
+pub type RpcResult<T> = std::result::Result<tonic::Response<T>, tonic::Status>;
+
 /// toyDB errors. All except Internal are considered user-facing.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Error {
@@ -154,6 +157,7 @@ impl From<tonic::Status> for Error {
             "[Abort]" => Error::Abort,
             "[ReadOnly]" => Error::ReadOnly,
             "[Serialization]" => Error::Serialization,
+            "[NotLeader]" => Error::NotLeader,
             _ => Error::Internal(format!("Unknown error type: {}", err.message()).to_string()),
         }
     }
