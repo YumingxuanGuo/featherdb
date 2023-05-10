@@ -8,7 +8,7 @@ mod state;
 
 pub use self::node::Node;
 pub use self::log::{Log, Entry};
-pub use self::state::{ApplyMsg, Driver, State};
+pub use self::state::{ApplyMsg, ApplyResult, Driver, State};
 pub use self::server::{Command, KvSession, Task};
 
 use crate::error::{Result, Error, RpcResult};
