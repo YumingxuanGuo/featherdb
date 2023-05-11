@@ -132,6 +132,11 @@ impl Node {
         Ok(self.raft.lock()?.me)
     }
 
+    /// The id of the peer that this peer believes is the current leader.
+    pub fn leader_id(&self) -> Result<u64> {
+        Ok(self.raft.lock()?.leader_id())
+    }
+
     /// Tick the underlying Raft node to the next state.
     pub fn tick(&self) -> Result<()> {
         let mut raft = self.raft.lock()?;

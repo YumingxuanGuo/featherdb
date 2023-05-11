@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+mod client;
 mod log;
 mod node;
 mod server;
@@ -9,7 +10,7 @@ mod state;
 pub use self::node::Node;
 pub use self::log::{Log, Entry};
 pub use self::state::{ApplyMsg, ApplyResult, Driver, State};
-pub use self::server::{Command, KvSession, Task};
+pub use self::server::{Command, KvSession, RpcStatus, Task};
 
 use crate::error::{Result, Error, RpcResult};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
@@ -165,6 +166,19 @@ impl Raft {
         match self.role {
             Role::Leader { .. } => true,
             _ => false,
+        }
+    }
+
+    pub fn leader_id(&self) -> u64 {
+        match self.role {
+            Role::Leader { .. } => self.me,
+            Role::Candidate { .. } => self.me,
+            Role::Follower { leader, .. } => {
+                match leader {
+                    Some(leader) => leader,
+                    None => self.me,
+                }
+            },
         }
     }
 
