@@ -7,20 +7,18 @@ service RaftServer {
     rpc Execute (ExecutionRequest) returns (ExecutionReply);
 }
 
-message RegistrationRequest {
-
-}
+message RegistrationRequest { }
 
 message RegistrationReply {
     bytes status = 1;
-    uint64 client_id = 2;
+    uint64 session_id = 2;
     uint64 leader_hint = 3;
 }
 
 message ExecutionRequest {
-    uint64 client_id = 1;
+    uint64 session_id = 1;
     uint64 sequence_number = 2;
-    bytes command = 3;
+    bytes operation = 3;
 }
 
 message ExecutionReply {
