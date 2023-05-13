@@ -15,6 +15,9 @@ pub trait State: Send + Sync {
     /// Executes the given operation. If the state machine returns Error::Internal, the Raft node
     /// halts. For any other error, the state is applied and the error propagated to the caller.
     fn execute(&mut self, index: u64, operation: Vec<u8>) -> Result<Vec<u8>>;
+
+    /// Queries the state machine. All errors are propagated to the caller.
+    fn query(&self, command: Vec<u8>) -> Result<Vec<u8>>;
 }
 
 /// A Raft state machine apply message.
