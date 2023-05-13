@@ -7,6 +7,7 @@ mod node;
 mod server;
 mod state;
 
+pub use self::client::KvClient;
 pub use self::node::Node;
 pub use self::log::{Log, Entry};
 pub use self::state::{ApplyMsg, ApplyResult, Driver, State};
