@@ -7,6 +7,7 @@ use crate::proto::raft_server::{raft_server_client::RaftServerClient, Registrati
 use super::RpcStatus;
 
 /// A Raft-based key-value client.
+#[derive(Clone)]
 pub struct KvClient {
     servers: Vec<RaftServerClient<Channel>>,
     session_id: u64,
@@ -52,7 +53,7 @@ impl KvClient {
         }
     }
 
-    /// Executes an operation.
+    /// Mutates the Raft state machine.
     pub async fn execute(&mut self, operation: Vec<u8>) -> Result<Vec<u8>> {
         loop {
             let execution_request = ExecutionRequest {
@@ -80,6 +81,11 @@ impl KvClient {
                 Err(e) => { continue; },
             }
         }
+    }
+
+    /// Queries the Raft state machine.
+    pub async fn query(&self, query: Vec<u8>) -> Result<Vec<u8>> {
+        todo!()
     }
 
     /// Serializes a value for the Raft client.
