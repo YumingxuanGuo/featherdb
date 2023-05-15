@@ -1,11 +1,10 @@
-pub mod demo;
+pub mod memory;
 
 use std::fmt::Display;
 use std::ops::{Bound, RangeBounds};
 
 use crate::error::Result;
-
-pub use demo::LogDemo;
+pub use memory::{LogDemo, Memory};
 
 /// A log store. Entry indexes are 1-based, to match Raft semantics.
 pub trait LogStore: Display + Sync + Send {
