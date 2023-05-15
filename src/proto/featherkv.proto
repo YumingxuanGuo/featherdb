@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package raft_server;
+package featherkv;
 
-service RaftStorage {
+service FeatherKV {
     rpc Register (RegistrationRequest) returns (RegistrationReply);
     rpc Mutate (ExecutionRequest) returns (ExecutionReply);
     rpc Query (ExecutionRequest) returns (ExecutionReply);

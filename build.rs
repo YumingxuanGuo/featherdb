@@ -20,6 +20,12 @@ fn main() {
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
-        .compile(&["src/proto/raft_server.proto"], &["proto"])
+        .compile(&["src/proto/featherkv.proto"], &["proto"])
+        .unwrap();
+
+    tonic_build::configure()
+        .build_server(true)
+        .build_client(true)
+        .compile(&["src/proto/featherdb.proto"], &["proto"])
         .unwrap();
 }
