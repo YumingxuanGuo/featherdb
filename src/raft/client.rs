@@ -2,28 +2,33 @@ use serde::{Deserialize, Serialize};
 use tonic::transport::Channel;
 
 use crate::error::{Result, Error};
-use crate::proto::raft_server::{ExecutionReply, ExecutionRequest};
-use crate::proto::raft_server::{raft_server_client::RaftServerClient, RegistrationRequest, RegistrationReply};
+use crate::proto::featherkv::{ExecutionReply, ExecutionRequest};
+use crate::proto::featherkv::{FeatherKvClient, RegistrationRequest, RegistrationReply};
 use super::RpcStatus;
 
 /// A Raft-based key-value client.
 #[derive(Clone)]
-pub struct KvClient {
-    servers: Vec<RaftServerClient<Channel>>,
+pub struct Client {
+    servers: Vec<FeatherKvClient<Channel>>,
     session_id: u64,
     sequence_number: u64,
     last_leader: u64,
 }
 
-impl KvClient {
+impl Client {
     /// Creates a new Raft client.
-    pub fn new(servers: Vec<RaftServerClient<Channel>>) -> Self {
-        Self {
+    pub fn new(servers: Vec<String>) -> Result<Self> {
+        let servers = servers
+            .into_iter()
+            .map(|addr| futures::executor::block_on(FeatherKvClient::connect(addr)))
+            .collect::<core::result::Result<Vec<_>, _>>()
+            .or_else(|e| Err(Error::Internal(e.to_string())))?;
+        Ok(Self {
             servers,
             session_id: 0,
             sequence_number: 1,
             last_leader: 0,
-        }
+        })
     }
 
     /// Registers a new session.
@@ -54,14 +59,14 @@ impl KvClient {
     }
 
     /// Mutates the Raft state machine.
-    pub async fn execute(&mut self, operation: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn mutate(&mut self, operation: Vec<u8>) -> Result<Vec<u8>> {
         loop {
             let execution_request = ExecutionRequest {
                 session_id: self.session_id,
                 sequence_number: self.sequence_number,
                 operation: operation.clone(),
             };
-            match self.servers[self.last_leader as usize].execute(execution_request).await {
+            match self.servers[self.last_leader as usize].mutate(execution_request).await {
                 Ok(reply) => {
                     let ExecutionReply { status, response, leader_hint } = reply.into_inner();
                     self.last_leader = leader_hint;
