@@ -2,9 +2,10 @@ syntax = "proto3";
 
 package raft_server;
 
-service RaftServer {
+service RaftStorage {
     rpc Register (RegistrationRequest) returns (RegistrationReply);
-    rpc Execute (ExecutionRequest) returns (ExecutionReply);
+    rpc Mutate (ExecutionRequest) returns (ExecutionReply);
+    rpc Query (ExecutionRequest) returns (ExecutionReply);
 }
 
 message RegistrationRequest { }
