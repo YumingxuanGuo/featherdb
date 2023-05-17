@@ -6,6 +6,7 @@
 mod kv;
 pub mod raft;
 pub use kv::KvSqlEngine;
+pub use raft::{RaftSqlEngine, StateMachine};
 pub use crate::concurrency::Mode;
 
 use std::collections::HashSet;
