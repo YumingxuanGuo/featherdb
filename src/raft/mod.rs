@@ -7,16 +7,16 @@ mod node;
 mod server;
 mod state;
 
-pub use self::client::KvClient;
+pub use self::client::Client;
 pub use self::node::Node;
 pub use self::log::{Log, Entry};
 pub use self::state::{ApplyMsg, ApplyResult, Driver, State};
-pub use self::server::{Command, KvSession, RpcStatus, Task};
+pub use self::server::{Command, FeatherKV, Session, RpcStatus, Task};
 
 use crate::error::{Result, Error, RpcResult};
 use crate::proto::raft::{RequestVoteArgs, RequestVoteReply, AppendEntriesArgs};
 use crate::proto::raft::raft_service_client::RaftServiceClient;
-use crate::storage::log::LogDemo;
+use crate::storage;
 
 use std::collections::HashMap;
 use futures::Future;
@@ -140,7 +140,7 @@ impl Raft {
     pub fn new(
         me: u64,
         apply_tx: mpsc::UnboundedSender<ApplyMsg>,
-        // log: Log,
+        log_store: Box<dyn storage::log::LogStore>,
         // peers: Vec<RaftClient>,
         // persister: Box<dyn Persister>,
     ) -> Result<Raft> {
@@ -152,7 +152,7 @@ impl Raft {
 
             current_term: 0,
             voted_for: None,
-            log: Log::new(Box::new(LogDemo::new()))?,
+            log: Log::new(log_store)?,
 
             commit_index: 0,
             last_applied: 0,
@@ -214,7 +214,17 @@ impl Raft {
     fn start(&mut self, command: Command) -> Result<(u64, u64)> {
         let index = self.log.last_index + 1;
         let term = self.current_term;
-        self.log.append(term, command)?;
+        self.log.append(term, command.clone())?;
+
+        // If there is only one server, commits the log entry and apply it immediately.
+        if self.peers.len() == 1 {
+            self.commit_index = index;
+            self.last_applied = index;
+            self.apply_tx.send(ApplyMsg { log_index: index, command })?;
+            return Ok((index, term));
+        }
+
+        // Sends the log entry to the replicator worker for each peer.
         for id in 0..self.peers.len() as u64 {
             if id == self.me {
                 continue;
@@ -226,6 +236,7 @@ impl Raft {
                 return Err(Error::Internal(format!("{} is not leader", self.me)));
             }
         }
+        
         Ok((index, term))
     }
 }
