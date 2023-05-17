@@ -1,23 +1,27 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tonic::{Request, Response};
 
 use crate::error::{Result, RpcResult, Error};
-use crate::proto::raft_server::{RegistrationRequest, RegistrationReply, ExecutionReply, ExecutionRequest};
-use crate::proto::raft_server::raft_server_server::RaftServer;
+use crate::proto::featherkv::{FeatherKv, RegistrationRequest, RegistrationReply, ExecutionReply, ExecutionRequest};
+use crate::storage::log::LogStore;
 use super::{Node, Driver, State, ApplyResult};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// A Raft session command.
 pub enum Command {
-    Operation {
+    Mutation {
         session_id: u64,
         sequence_number: u64,
-        operation: Vec<u8>,
+        mutation: Vec<u8>,
+    },
+    Query {
+        session_id: u64,
+        sequence_number: u64,
+        query: Vec<u8>,
     },
     Registration {
         session_id: u64,
@@ -31,65 +35,58 @@ pub enum RpcStatus {
     SessionExpired,
 }
 
-/// A Raft-based key-value server.
-pub struct KvServer {
+/// A Raft-based FeatherKV.
+pub struct FeatherKV {
     /// The underlying Raft node.
     node: Node,
-    /// The state machine driver.
-    driver: Driver,
     /// The next session ID, incrementing from 1.
     next_session_id: Arc<Mutex<u64>>,
     /// The channel to receive registration result from.
-    registration_status: Arc<Mutex<HashMap<u64, oneshot::Sender<mpsc::UnboundedSender<Task>>>>>,
+    registration_status: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<mpsc::UnboundedSender<Task>>>>>,
     /// The sending channels of the ongoing sessions.
     session_txs: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<Task>>>>,
 }
 
-impl KvServer {
-    /// Creates a new Raft server.
+impl FeatherKV {
+    /// Creates a new Raft FeatherKV. Spawns one background task to serve the Raft node and one to
+    /// drive the state machine. Assumes that the caller will be long running.
     pub async fn new(
+        me: u64,
+        peers: Vec<String>,
         state: Box<dyn State>,
+        log_store: Box<dyn LogStore>,
     ) -> Result<Self> {
         let (apply_tx, apply_rx) = mpsc::unbounded_channel();
         let registration_status = Arc::new(Mutex::new(HashMap::new()));
-        let node = Node::new(0, vec![], apply_tx).await?;   // TODO: Better signature for Node::new()
+
+        let node = Node::new(me, peers, apply_tx, log_store).await?;
+        let driver = Driver::new(node.clone(), state, apply_rx, registration_status.clone());
+
+        tokio::spawn(driver.drive());
+        tokio::spawn(node.clone().serve());
+        
         Ok(Self {
-            driver: Driver::new(node.clone(), state, apply_rx, registration_status.clone()),
+            node,
             next_session_id: Arc::new(Mutex::new(1)),
             registration_status,
             session_txs: Arc::new(Mutex::new(HashMap::new())),
-            node,
         })
     }
 
-    /// Starts the Raft server.
-    pub async fn serve(self) -> Result<()> {
-        let (task, driver) = self.driver.drive().remote_handle();
-        tokio::spawn(task);
-
-        let (task, node) = self.node.serve().remote_handle();
-        tokio::spawn(task);
-        
-        tokio::try_join!(driver, node)?;
-        Ok(())
-    }
-
-    /// Serializes a value for the Raft server.
+    /// Serializes a value for the Raft FeatherKV.
     fn serialize<V: Serialize>(value: &V) -> Result<Vec<u8>> {
         Ok(bincode::serialize(value)?)
     }
 
-    /// Deserializes a value from the Raft server.
+    /// Deserializes a value from the Raft FeatherKV.
     fn deserialize<'a, V: Deserialize<'a>>(bytes: &'a [u8]) -> Result<V> {
         Ok(bincode::deserialize(bytes)?)
     }
 }
 
 #[tonic::async_trait]
-impl RaftServer for KvServer {
-    async fn register(&self, request: Request<RegistrationRequest>) -> RpcResult<RegistrationReply> {
-        // TODO: `leader_hint`
-
+impl FeatherKv for FeatherKV {
+    async fn register(&self, _request: Request<RegistrationRequest>) -> RpcResult<RegistrationReply> {
         let not_leader_reply = RegistrationReply {
             status: Self::serialize(&RpcStatus::NotLeader)?,
             session_id: 0,
@@ -109,7 +106,7 @@ impl RaftServer for KvServer {
         };
 
         // The channel to receive the registration result from the driver.
-        let (task_ch_tx, task_ch_rx) = oneshot::channel();
+        let (task_ch_tx, mut task_ch_rx) = mpsc::unbounded_channel();
         {
             self.registration_status.lock().unwrap().insert(session_id, task_ch_tx);
         }
@@ -125,10 +122,9 @@ impl RaftServer for KvServer {
         }
 
         // Waits for the replica group to apply the registration command. Retries if timeout.
-        let mut task_ch_rx = Some(task_ch_rx);
         loop {
             tokio::select! {
-                task_tx = task_ch_rx.take().unwrap() => {
+                task_tx = task_ch_rx.recv() => {
                     let task_tx = task_tx.unwrap();
                     self.session_txs.lock().unwrap().insert(session_id, task_tx);
 
@@ -152,19 +148,20 @@ impl RaftServer for KvServer {
         }
     }
 
-    async fn execute(&self, request: Request<ExecutionRequest>) -> RpcResult<ExecutionReply> {
+    async fn mutate(&self, request: Request<ExecutionRequest>) -> RpcResult<ExecutionReply> {
         let ExecutionRequest { session_id, sequence_number, operation } = request.into_inner();
         let (reply_tx, reply_rx) = oneshot::channel();
         let task = Task {
             reply_tx,
-            command: Command::Operation {
+            command: Command::Mutation {
                 session_id,
                 sequence_number,
-                operation,
+                mutation: operation,
             },
         };
 
         {
+            // Sends the task to the corresponding session.
             let mut session_txs = self.session_txs.lock().unwrap();
             match session_txs.get_mut(&session_id) {
                 Some(session_tx) => {
@@ -181,6 +178,42 @@ impl RaftServer for KvServer {
             }
         }
         
+        // Waits for the session to reply.
+        let reply = reply_rx.await.unwrap();
+        Ok(Response::new(reply))
+    }
+
+    async fn query(&self, request: Request<ExecutionRequest>) -> RpcResult<ExecutionReply> {
+        let ExecutionRequest { session_id, sequence_number, operation } = request.into_inner();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let task = Task {
+            reply_tx,
+            command: Command::Query {
+                session_id,
+                sequence_number,
+                query: operation,
+            },
+        };
+
+        {
+            // Sends the task to the corresponding session.
+            let mut session_txs = self.session_txs.lock().unwrap();
+            match session_txs.get_mut(&session_id) {
+                Some(session_tx) => {
+                    session_tx.send(task).unwrap();
+                },
+                None => {
+                    let reply = ExecutionReply {
+                        status: Self::serialize(&RpcStatus::SessionExpired)?,
+                        response: vec![],
+                        leader_hint: self.node.leader_id()?,
+                    };
+                    return Ok(Response::new(reply));
+                },
+            }
+        }
+        
+        // Waits for the session to reply.
         let reply = reply_rx.await.unwrap();
         Ok(Response::new(reply))
     }
@@ -194,7 +227,7 @@ pub struct Task {
 }
 
 /// A Raft-based key-value session.
-pub struct KvSession {
+pub struct Session {
     /// The underlying Raft node.
     node: Node,
     /// The session ID.
@@ -209,7 +242,7 @@ pub struct KvSession {
     result_rx: mpsc::UnboundedReceiver<ApplyResult>,
 }
 
-impl KvSession {
+impl Session {
     /// Creates a new Raft session.
     pub fn new(
         node: Node,
@@ -231,7 +264,8 @@ impl KvSession {
     pub async fn serve(mut self) -> Result<()> {
         while let Some(Task { reply_tx, command }) = self.task_rx.recv().await {
             match command {
-                Command::Operation { session_id, sequence_number, .. } => {
+                Command::Mutation { session_id, sequence_number, .. } 
+                | Command::Query { session_id, sequence_number, .. } => {
                     assert!(sequence_number >= self.last_applied_sequence_number);
                     assert_eq!(session_id, self.session_id);
 
@@ -290,7 +324,7 @@ impl KvSession {
                                 reply_tx.send(reply).unwrap();
                                 break;
                             },
-            
+
                             _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
                                 match self.node.start(command.clone()) {
                                     Err(Error::NotLeader) => {

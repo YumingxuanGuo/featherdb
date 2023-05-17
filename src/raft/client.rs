@@ -17,12 +17,17 @@ pub struct Client {
 
 impl Client {
     /// Creates a new Raft client.
-    pub fn new(servers: Vec<String>) -> Result<Self> {
-        let servers = servers
-            .into_iter()
-            .map(|addr| futures::executor::block_on(FeatherKvClient::connect(addr)))
-            .collect::<core::result::Result<Vec<_>, _>>()
-            .or_else(|e| Err(Error::Internal(e.to_string())))?;
+    pub async fn new(servers: Vec<String>) -> Result<Self> {
+        let servers = {
+            let mut clients = Vec::new();
+            for addr in servers {
+                let addr = format!("http://{}", addr).to_string();
+                let client = FeatherKvClient::connect(addr).await.unwrap();
+                clients.push(client);
+            }
+            clients
+        };
+        println!("Connected to {} FeatherKV servers.", servers.len());
         Ok(Self {
             servers,
             session_id: 0,
@@ -31,7 +36,7 @@ impl Client {
         })
     }
 
-    /// Registers a new session.
+    /// Registers a new session. This method will keep retrying until getting a valid reply.
     async fn register(&mut self) -> Result<()> {
         loop {
             match self.servers[self.last_leader as usize].register(RegistrationRequest { }).await {
@@ -42,7 +47,7 @@ impl Client {
                     match Self::deserialize::<RpcStatus>(&status)? {
                         RpcStatus::Ok => {
                             self.session_id = session_id;
-                            self.sequence_number = 0;
+                            self.sequence_number = 1;
                             return Ok(());
                         },
                         RpcStatus::NotLeader => { continue; },
@@ -58,14 +63,15 @@ impl Client {
         }
     }
 
-    /// Mutates the Raft state machine.
-    pub async fn mutate(&mut self, operation: Vec<u8>) -> Result<Vec<u8>> {
+    /// Mutates the Raft state machine. This method will keep retrying until getting a valid reply.
+    pub async fn mutate(&mut self, mutation: Vec<u8>) -> Result<Vec<u8>> {
         loop {
             let execution_request = ExecutionRequest {
                 session_id: self.session_id,
                 sequence_number: self.sequence_number,
-                operation: operation.clone(),
+                operation: mutation.clone(),
             };
+
             match self.servers[self.last_leader as usize].mutate(execution_request).await {
                 Ok(reply) => {
                     let ExecutionReply { status, response, leader_hint } = reply.into_inner();
@@ -74,8 +80,7 @@ impl Client {
                     match Self::deserialize::<RpcStatus>(&status)? {
                         RpcStatus::Ok => {
                             self.sequence_number += 1;
-                            let result = Self::deserialize::<Vec<u8>>(&response)?;
-                            return Ok(result);
+                            return Self::deserialize::<Result<Vec<u8>>>(&response)?;
                         },
                         RpcStatus::NotLeader => { continue; },
                         RpcStatus::SessionExpired => { self.register().await?; },
@@ -88,9 +93,34 @@ impl Client {
         }
     }
 
-    /// Queries the Raft state machine.
-    pub async fn query(&self, query: Vec<u8>) -> Result<Vec<u8>> {
-        todo!()
+    /// Queries the Raft state machine. This method will keep retrying until getting a valid reply.
+    pub async fn query(&mut self, query: Vec<u8>) -> Result<Vec<u8>> {
+        loop {
+            let execution_request = ExecutionRequest {
+                session_id: self.session_id,
+                sequence_number: self.sequence_number,
+                operation: query.clone(),
+            };
+
+            match self.servers[self.last_leader as usize].query(execution_request).await {
+                Ok(reply) => {
+                    let ExecutionReply { status, response, leader_hint } = reply.into_inner();
+                    self.last_leader = leader_hint;
+
+                    match Self::deserialize::<RpcStatus>(&status)? {
+                        RpcStatus::Ok => {
+                            self.sequence_number += 1;
+                            return Self::deserialize::<Result<Vec<u8>>>(&response)?;
+                        },
+                        RpcStatus::NotLeader => { continue; },
+                        RpcStatus::SessionExpired => { self.register().await?; },
+                    }
+                },
+
+                // Timeout, retries the request.
+                Err(e) => { continue; },
+            }
+        }
     }
 
     /// Serializes a value for the Raft client.
