@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
 use futures::{stream::FuturesUnordered, Future};
 use rand::Rng;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
-use tonic::transport::{Server, Channel};
+use tonic::transport::Server;
 use tonic::{Response, Status, Request};
 
 use crate::error::{Result, Error, RpcResult};
@@ -13,7 +14,8 @@ use crate::proto::raft::raft_service_client::RaftServiceClient;
 use crate::proto::raft::raft_service_server::{RaftService, RaftServiceServer};
 use crate::proto::raft::{RequestVoteReply, RequestVoteArgs, AppendEntriesArgs, AppendEntriesReply};
 use crate::server::{deserialize, serialize};
-use super::{Raft, Role, HEARTBEAT_INTERVAL, ApplyMsg, Command, Entry};
+use crate::storage::log::LogStore;
+use super::{HEARTBEAT_INTERVAL, Raft, Role, ApplyMsg, Command, Entry};
 
 // An interceptor function. TODO: use layer instead.
 fn intercept(req: Request<()>) -> core::result::Result<Request<()>, Status> {
@@ -37,10 +39,12 @@ impl Node {
         me: u64,
         peers: Vec<String>,
         apply_tx: mpsc::UnboundedSender<ApplyMsg>,
+        log_store: Box<dyn LogStore>,
     ) -> Result<Node> {
         let node = Node { raft: Arc::new(Mutex::new(Raft::new(
             me,
-            apply_tx
+            apply_tx,
+            log_store,
         )?)) };
         let node_clone = node.clone();
 
@@ -73,11 +77,10 @@ impl Node {
                 }
                 let mut addr = "http://".to_string();
                 addr.push_str(&peers[i]);
-                let channel = match Channel::from_shared(addr).unwrap().connect().await {
+                let client = match RaftServiceClient::connect(addr).await {
                     Ok(channel) => channel,
                     Err(_) => { continue; },
                 };
-                let client = RaftServiceClient::new(channel);
                 let mut raft = node.raft.lock()?;
                 raft.peers.push(client);
                 conns[i] = true;
@@ -191,6 +194,15 @@ impl Node {
             Future<Output = RpcResult<RequestVoteReply>>>,
     ) -> Result<()> {
         let mut vote_count = 1;
+        
+        // If there is only myself in the cluster, we can become leader immediately.
+        if vote_count >= quorum {
+            let mut raft = arc_raft.lock()?;
+            let work_txs = HashMap::new();
+            raft.become_leader(work_txs);
+            return Ok(());
+        }
+
         while let Some(res) = request_vote_replies.next().await {
             let (term, vote_granted) = match res {
                 Ok(res) => (res.get_ref().term, res.get_ref().vote_granted),
