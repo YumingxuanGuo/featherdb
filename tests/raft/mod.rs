@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use featherdb::error::{Error, Result};
 use featherdb::raft::{Node, ApplyMsg};
+use featherdb::storage;
 use tokio::sync::mpsc;
 
 /// Set up a cluster of `cluster_size` nodes.
@@ -28,6 +29,7 @@ async fn setup(cluster_size: u64) -> Result<Cluster> {
                         "127.0.0.1:50059".to_string(),
                     ],
                     apply_tx,
+                    Box::new(storage::log::Memory::new()),
                 ).await.unwrap();
                 node_tx.send(node.clone()).unwrap();
                 drop(node_tx);
@@ -100,9 +102,9 @@ impl Cluster {
         Err(Error::Internal("Expected one leader, got none.".to_string()))
     }
 
-    async fn check_consensus(&self) -> Result<()> {
+    // async fn check_consensus(&self) -> Result<()> {
 
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }

@@ -88,8 +88,9 @@ macro_rules! test_query {
                 });
 
             match result {
-                Ok(ResultSet::Query{columns, rows, ..}) => {
-                    let rows: Vec<Row> = match rows.collect() {
+                Ok(ResultSet::Query{columns, buffered_rows}) => {
+                    // TODO: `buffered_rows` should be wrapped with Result.
+                    let rows: Vec<Row> = match buffered_rows {
                         Ok(rows) => rows,
                         Err(err) => {
                             write!(f, " {:?}", err)?;
