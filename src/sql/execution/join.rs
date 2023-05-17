@@ -30,10 +30,10 @@ impl<T: SqlTxn> Executor<T> for NestedLoopJoinExec<T> {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         match (self.left.execute(txn)?, self.right.execute(txn)?) {
             (
-                ResultSet::Query { mut columns, rows, buffered_rows },
+                ResultSet::Query { mut columns, buffered_rows },
                 ResultSet::Query {
                     columns: right_columns,
-                    rows: right_rows,
+                    // rows: right_rows,
                     buffered_rows: right_buffered_rows,
                 }
             ) => {
@@ -42,23 +42,22 @@ impl<T: SqlTxn> Executor<T> for NestedLoopJoinExec<T> {
                 // FIXME: Since making the iterators or sources clonable is non-trivial (requiring
                 // either avoiding Rust standard iterators or making sources generic), we simply
                 // fetch the entire right result as a vector.
-                // FIXME: This is also not very efficient, since we calculate the results twice.
                 return Ok(ResultSet::Query {
                     columns,
-                    rows: Box::new(NestedLoopRows::new(
-                        rows,
-                        right_rows.collect::<Result<Vec<_>>>()?,
-                        right_width,
-                        self.predicate.clone(),
-                        self.outer,
-                    )),
+                    // rows: Box::new(NestedLoopRows::new(
+                    //     rows,
+                    //     right_rows.collect::<Result<Vec<_>>>()?,
+                    //     right_width,
+                    //     self.predicate.clone(),
+                    //     self.outer,
+                    // )),
                     buffered_rows: NestedLoopRows::new(
-                        Box::new(buffered_rows.into_iter().map(|row| Ok(row))),
-                        right_buffered_rows,
+                        Box::new(buffered_rows?.into_iter().map(|row| Ok(row))),
+                        right_buffered_rows?,
                         right_width,
                         self.predicate,
                         self.outer,
-                    ).collect::<Result<Vec<_>>>()?,
+                    ).collect::<Result<Vec<_>>>(),
                 });
             },
             _ => Err(Error::Internal("Unexpected result set".into())),

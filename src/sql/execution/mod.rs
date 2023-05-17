@@ -60,7 +60,7 @@ impl<T: SqlTxn + 'static> dyn Executor<T> {
     }
 }
 
-#[derive(Derivative, Serialize, Deserialize)]
+#[derive(Clone, Derivative, Serialize, Deserialize)]
 #[derivative(Debug, PartialEq)]
 pub enum ResultSet {
     /// Transaction started
@@ -79,12 +79,12 @@ pub enum ResultSet {
     /// Query results
     Query {
         columns: Columns, 
-        #[derivative(Debug = "ignore")]
-        #[derivative(PartialEq = "ignore")]
-        #[serde(skip, default = "ResultSet::empty_rows")]
-        rows: Rows,
+        // #[derivative(Debug = "ignore")]
+        // #[derivative(PartialEq = "ignore")]
+        // #[serde(skip, default = "ResultSet::empty_rows")]
+        // rows: Rows,
         // FIXME: We buffer rows for now to bypass gRPC's lack of streaming support.
-        buffered_rows: Vec<Row>,
+        buffered_rows: Result<Vec<Row>>,
     },
 
     /// Table created
@@ -104,16 +104,18 @@ impl ResultSet {
 
     /// Converts the ResultSet into a row, or errors if not a query result with rows.
     pub fn into_row(self) -> Result<Row> {
-        if let ResultSet::Query { mut rows, .. } = self {
-            rows.next().transpose()?.ok_or_else(|| Error::Value("No rows returned".into()))
-        } else {
-            Err(Error::Value(format!("Not a query result: {:?}", self)))
-        }
+        todo!()
+        // if let ResultSet::Query { mut rows, .. } = self {
+        //     rows.next().transpose()?.ok_or_else(|| Error::Value("No rows returned".into()))
+        // } else {
+        //     Err(Error::Value(format!("Not a query result: {:?}", self)))
+        // }
     }
 
     /// Converts the ResultSet into a value, if possible. TODO: Read.
     pub fn into_value(self) -> Result<Value> {
-        self.into_row()?.into_iter().next().ok_or_else(|| Error::Value("No value returned".into()))
+        todo!()
+        // self.into_row()?.into_iter().next().ok_or_else(|| Error::Value("No value returned".into()))
     }
 }
 
