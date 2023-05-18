@@ -1,3 +1,5 @@
+// FIXME: Deprecated. Needs to be updated to use the new FeatherDB client.
+
 use featherdb::concurrency::Mode;
 use featherdb::error::{Error, Result};
 use featherdb::proto::registration::RegistrationRequest;
@@ -11,7 +13,7 @@ use rustyline::validate::{Validator, ValidationContext, ValidationResult};
 use rustyline_derive::{Completer, Helper, Highlighter, Hinter};
 use tonic::transport::Channel;
 
-use featherdb::server::{Args, serialize, deserialize, Reply};
+use featherdb::server::{ClientRequest, serialize, deserialize, ClientResponse};
 use featherdb::sql::parser::{Lexer, Token, Symbol};
 
 #[tokio::main]
@@ -102,12 +104,12 @@ impl FeatherClient {
     /// Runs a query and displays the results.
     async fn execute_query(&mut self, query: &str) -> Result<()> {
         let request = tonic::Request::new(ExecutionRequest {
-            data: serialize(&Args::Query(query.to_string()))?,
+            data: serialize(&ClientRequest::Query(query.to_string()))?,
         });
         let reply = self.client.execute(request).await?.into_inner();
         
-        match deserialize::<Reply>(&reply.data)? {
-            Reply::Query(result_set) => {
+        match deserialize::<ClientResponse>(&reply.data)? {
+            ClientResponse::Query(result_set) => {
                 match result_set {
                     ResultSet::Begin { id, mode } => match mode {
                         Mode::ReadWrite => println!("  Began transaction {}", id),
@@ -136,11 +138,11 @@ impl FeatherClient {
                                     .join("|")
                             );
                         }
-                        let mut iter = buffered_rows.into_iter();
+                        let mut iter = buffered_rows?.into_iter();
                         while let Some(row) = iter.next() {
                             println!(
                                 "  {}",
-                                row.into_iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join("|")
+                                row.into_iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join("|")
                             );
                         }
                     },
@@ -198,12 +200,12 @@ The following commands are also available:
 
             "!table" => {
                 let request = tonic::Request::new(ExecutionRequest {
-                    data: serialize(&Args::GetTable(getargs(1)?[0].to_string()))?,
+                    data: serialize(&ClientRequest::GetTable(getargs(1)?[0].to_string()))?,
                 });
                 let reply = self.client.execute(request).await?.into_inner();
 
-                match deserialize::<Reply>(&reply.data)? {
-                    Reply::GetTable(table) => println!("{}", table),
+                match deserialize::<ClientResponse>(&reply.data)? {
+                    ClientResponse::GetTable(table) => println!("{}", table),
                     _ => return Err(Error::Internal("Unexpected reply.".to_string())),
                 }
             }
@@ -211,12 +213,12 @@ The following commands are also available:
             "!tables" => {
                 getargs(0)?;
                 let request = tonic::Request::new(ExecutionRequest {
-                    data: serialize(&Args::ListTables)?,
+                    data: serialize(&ClientRequest::ListTables)?,
                 });
                 let reply = self.client.execute(request).await?.into_inner();
                 
-                match deserialize::<Reply>(&reply.data)? {
-                    Reply::ListTables(tables) => {
+                match deserialize::<ClientResponse>(&reply.data)? {
+                    ClientResponse::ListTables(tables) => {
                         for table in tables {
                             println!("{}", table);
                         }

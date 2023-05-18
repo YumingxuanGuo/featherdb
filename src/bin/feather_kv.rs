@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Config::new("/config.yaml")?;
+    let config = Config::new("config/feather_kv.yaml")?;
 
     let log_store: Box<dyn storage::log::LogStore> = match config.storage_log.as_str() {
         "memory" => Box::new(storage::log::Memory::new()),
@@ -27,12 +27,14 @@ async fn main() -> Result<()> {
             concurrency::MVCC::new(kv_store, true),
         )?
     );
-    
+
     let server = FeatherKV::new(config.id, config.peers.clone(), state, log_store).await?;
+
+    println!("FeatherKV server listening on {}...", config.serve_addr.clone());
 
     Server::builder()
         .add_service(FeatherKvServer::new(server))
-        .serve("".parse()?)
+        .serve(config.serve_addr.parse()?)
         .await
         .or_else(|e| Err(Error::Internal(format!("FeatherKV server failed: {:?}", e))))
 }
@@ -41,6 +43,7 @@ async fn main() -> Result<()> {
 struct Config {
     id: u64,
     peers: Vec<String>,
+    serve_addr: String,
     // log_level: String,
     data_dir: String,
     // sync: bool,
@@ -53,6 +56,7 @@ impl Config {
         let c = config::Config::builder()
             .set_default("id", 0)?
             .set_default("peers", Vec::<String>::new())?
+            .set_default("serve_addr", String::new())?
             // .set_default("log_level", "info")?
             .set_default("data_dir", "/var/lib/toydb")?
             // .set_default("sync", true)?
@@ -60,7 +64,7 @@ impl Config {
             .set_default("storage_kv", "memory")?
 
             .add_source(config::File::with_name(file))
-            .add_source(config::Environment::with_prefix("TOYDB"));
+            .add_source(config::Environment::with_prefix("FEATHERDB"));
 
         Ok(c.build()?.try_deserialize()?)
     }
