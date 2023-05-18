@@ -158,7 +158,7 @@ impl From<tonic::Status> for Error {
             "[ReadOnly]" => Error::ReadOnly,
             "[Serialization]" => Error::Serialization,
             "[NotLeader]" => Error::NotLeader,
-            _ => Error::Internal(format!("Unknown error type: {}", err.message()).to_string()),
+            _ => Error::Internal(format!("Unknown error type: {:?}", err.message())),
         }
     }
 }

@@ -6,3 +6,6 @@ pub mod raft;
 pub mod server;
 pub mod storage;
 pub mod sql;
+
+pub use raft::FeatherKV;
+pub use server::FeatherDB;
