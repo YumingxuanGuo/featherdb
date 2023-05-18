@@ -12,19 +12,15 @@ message RegistrationArgs {
 }
 
 message RegistrationReply {
-    bytes status = 1;
-    uint64 session_id = 2;
-    uint64 leader_hint = 3;
+    uint64 session_id = 1;
 }
 
 message ExecutionArgs {
     uint64 session_id = 1;
     uint64 sequence_number = 2;
-    bytes operation = 3;
+    bytes client_request = 3;
 }
 
 message ExecutionReply {
-    bytes status = 1;
-    bytes response = 2;
-    uint64 leader_hint = 3;
+    bytes result = 1;
 }
