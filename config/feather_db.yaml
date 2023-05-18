@@ -1,0 +1,11 @@
+# The node ID, peer ID/address map (empty for single node), and log level.
+# id: 0
+
+kv_addrs: [
+  127.0.0.1:9601,
+  # 127.0.0.1:9602,
+  # 127.0.0.1:9603,
+]
+
+# The network address this FeatherDB server listens on.
+serve_addr: 127.0.0.1:9501
