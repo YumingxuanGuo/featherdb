@@ -7,6 +7,7 @@ use tonic::{Request, Response};
 
 use crate::error::{Result, RpcResult, Error};
 use crate::proto::featherkv::{FeatherKv, RegistrationRequest, RegistrationReply, ExecutionReply, ExecutionRequest};
+use crate::sql::engine;
 use crate::storage::log::LogStore;
 use super::{Node, Driver, State, ApplyResult};
 
@@ -26,6 +27,30 @@ pub enum Command {
     Registration {
         session_id: u64,
     },
+}
+
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Command::Mutation { session_id, sequence_number, mutation } => {
+                write!(
+                    f,
+                    "Mutation {{ session_id: {}, sequence_number: {}, mutation: {} }}",
+                    session_id, sequence_number, FeatherKV::deserialize::<engine::raft::Mutation>(&mutation).unwrap(),
+                )
+            },
+            Command::Query { session_id, sequence_number, query } => {
+                write!(
+                    f,
+                    "Query {{ session_id: {}, sequence_number: {}, query: {} }}",
+                    session_id, sequence_number, FeatherKV::deserialize::<engine::raft::Query>(&query).unwrap(),
+                )
+            },
+            Command::Registration { session_id } => {
+                write!(f, "Registration {{ session_id: {} }}", session_id)
+            },
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

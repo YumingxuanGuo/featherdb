@@ -11,7 +11,7 @@ use super::{SqlEngine, Mode, SqlTxn, RowScan, IndexScan};
 
 /// A Raft state machine mutation
 #[derive(Clone, Serialize, Deserialize)]
-enum Mutation {
+pub(crate) enum Mutation {
     /// Begins a transaction in the given mode
     Begin(Mode),
     /// Commits the transaction with the given ID
@@ -32,9 +32,24 @@ enum Mutation {
     DeleteTable { txn_id: u64, table: String },
 }
 
+impl std::fmt::Display for Mutation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mutation::Begin(mode) => write!(f, "BEGIN {:#?}", mode),
+            Mutation::Commit(id) => write!(f, "COMMIT txn {}", id),
+            Mutation::Rollback(id) => write!(f, "ROLLBACK txn {}", id),
+            Mutation::Create { txn_id, table, row } => write!(f, "CREATE"),
+            Mutation::Delete { txn_id, table, id } => write!(f, "DELETE"),
+            Mutation::Update { txn_id, table, id, row } => write!(f, "UPDATE"),
+            Mutation::CreateTable { txn_id, schema } => write!(f, "CREATE TABLE"),
+            Mutation::DeleteTable { txn_id, table } => write!(f, "DELETE TABLE"),
+        }
+    }
+}
+
 /// A Raft state machine query
 #[derive(Clone, Serialize, Deserialize)]
-enum Query {
+pub(crate) enum Query {
     // /// Fetches engine status
     // Status,
     /// Resumes the active transaction with the given ID
@@ -53,6 +68,21 @@ enum Query {
     ScanTables { txn_id: u64 },
     /// Reads a table
     ReadTable { txn_id: u64, table: String },
+}
+
+impl std::fmt::Display for Query {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Query::Status => write!(f, "STATUS"),
+            Query::Resume(id) => write!(f, "RESUME txn {}", id),
+            Query::Read { txn_id, table, id } => write!(f, "READ"),
+            Query::ReadIndex { txn_id, table, column, value } => write!(f, "READ INDEX"),
+            Query::Scan { txn_id, table, filter } => write!(f, "SCAN"),
+            Query::ScanIndex { txn_id, table, column } => write!(f, "SCAN INDEX"),
+            Query::ScanTables { txn_id } => write!(f, "SCAN TABLES"),
+            Query::ReadTable { txn_id, table } => write!(f, "READ TABLE"),
+        }
+    }
 }
 
 /// An SQL engine that wraps a Raft cluster.

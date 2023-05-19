@@ -75,8 +75,9 @@ impl Driver {
     /// Drives a state machine.
     pub async fn drive(mut self) -> Result<()> {
         while let Some(msg) = self.apply_rx.next().await {
+            println!("Applying cmd {}: {}", msg.log_index, msg.command);
             if let Err(e) = self.execute(msg) {
-                println!("Error executing apply message: {:?}", e);
+                println!("Error applying: {:?}", e);
                 return Err(e);
             }
         }

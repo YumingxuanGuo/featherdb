@@ -80,6 +80,7 @@ impl FeatherDb for FeatherDB {
             *next_session_id += 1;
             session_id
         };
+        println!("Registered a new client, id = {}.", session_id);
 
         let (task_tx, task_rx) = mpsc::unbounded_channel();
         self.session_txs.lock().unwrap().insert(session_id, task_tx);

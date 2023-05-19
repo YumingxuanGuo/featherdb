@@ -27,7 +27,6 @@ impl Client {
             }
             clients
         };
-        println!("Connected to {} FeatherKV servers.", servers.len());
         Ok(Self {
             servers,
             session_id: 0,
