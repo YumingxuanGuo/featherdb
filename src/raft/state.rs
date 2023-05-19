@@ -76,6 +76,7 @@ impl Driver {
     pub async fn drive(mut self) -> Result<()> {
         while let Some(msg) = self.apply_rx.next().await {
             if let Err(e) = self.execute(msg) {
+                println!("Error executing apply message: {:?}", e);
                 return Err(e);
             }
         }
@@ -168,10 +169,10 @@ impl Driver {
             },
 
             Command::Registration { session_id } => {
-                // If the server is not the leader, simply ignores the command.
-                if !self.node.is_leader()? {
-                    return Ok(());
-                }
+                // // If the server is not the leader, simply ignores the command.
+                // if !self.node.is_leader()? {
+                //     return Ok(());
+                // }
                 
                 // Records the meta-data of the session. Ovewrites the existing session if any.
                 let (task_tx, task_rx) = mpsc::unbounded_channel();
@@ -188,10 +189,12 @@ impl Driver {
                 tokio::spawn(Session::new(node, session_id, task_rx, result_rx).serve());
 
                 // Notifies the server that the session has been registered.
-                let mut registration_status = self.registration_status.lock().unwrap();
-                let registration_tx = registration_status.remove(&session_id)
-                    .ok_or_else(|| Error::Internal(format!("Registration {} not found", session_id)))?;
-                registration_tx.send(task_tx).unwrap();
+                if self.node.is_leader()? {
+                    let mut registration_status = self.registration_status.lock().unwrap();
+                    let registration_tx = registration_status.remove(&session_id)
+                        .ok_or_else(|| Error::Internal(format!("Registration {} not found", session_id)))?;
+                    registration_tx.send(task_tx).unwrap();
+                }
             },
         }
 
