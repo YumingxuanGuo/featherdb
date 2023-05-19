@@ -7,7 +7,11 @@ use serde::Deserialize;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Config::new("config/feather_kv.yaml")?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 2 {
+        return Err(Error::Config("Usage: feather_kv <config_file_path>".to_string()));
+    }
+    let config = Config::new(&args[1])?;
 
     let log_store: Box<dyn storage::log::LogStore> = match config.storage_log.as_str() {
         "memory" => Box::new(storage::log::Memory::new()),

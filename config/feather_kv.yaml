@@ -3,8 +3,8 @@ id: 0
 
 peers: [
   127.0.0.1:9701,
-  # 127.0.0.1:9702,
-  # 127.0.0.1:9703,
+  127.0.0.1:9702,
+  127.0.0.1:9703,
 ]
 
 # The network address this FeatherKV server listens on.

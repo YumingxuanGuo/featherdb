@@ -6,7 +6,11 @@ use serde::Deserialize;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Config::new("config/feather_db.yaml")?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 2 {
+        return Err(Error::Config("Usage: feather_db <config_file_path>".to_string()));
+    }
+    let config = Config::new(&args[1])?;
     let server = FeatherDB::new(config.kv_addrs);
 
     println!("FeatherDB server listening on {}...", config.serve_addr.clone());
