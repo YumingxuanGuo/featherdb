@@ -49,7 +49,7 @@ impl Display for Plan {
 }
 
 /// A plan node
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Node {
     CreateTable { schema: Table },
     DropTable { table: String },

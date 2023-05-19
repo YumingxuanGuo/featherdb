@@ -101,7 +101,7 @@ impl<T: SqlTxn> UpdateExec<T> {
 impl<T: SqlTxn> Executor<T> for UpdateExec<T> {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         match self.source.execute(txn)? {
-            ResultSet::Query { mut rows, .. } => {
+            ResultSet::Query { buffered_rows, .. } => {
                 let table = txn.assert_read_table(&self.table)?;
 
                 // The iterator will see our changes, such that the same item may be iterated over
@@ -112,7 +112,8 @@ impl<T: SqlTxn> Executor<T> for UpdateExec<T> {
                 // multiple times - it should be possible to come up with a pathological case that
                 // loops forever (e.g. UPDATE test SET id = id + 1).
                 let mut updated = HashSet::new();
-                while let Some(row) = rows.next().transpose()? {
+                let mut rows = buffered_rows?.into_iter();
+                while let Some(row) = rows.next() {
                     let id = table.get_row_key(&row)?;
                     if updated.contains(&id) {
                         continue;
@@ -149,8 +150,9 @@ impl<T: SqlTxn> Executor<T> for DeleteExec<T> {
         let table = txn.assert_read_table(&self.table)?;
         let mut count = 0;
         match self.source.execute(txn)? {
-            ResultSet::Query { mut rows, .. } => {
-                while let Some(row) = rows.next().transpose()? {
+            ResultSet::Query { buffered_rows, .. } => {
+                let mut rows = buffered_rows?.into_iter();
+                while let Some(row) = rows.next() {
                     txn.delete(&table.name, &table.get_row_key(&row)?)?;
                     count += 1;
                 }

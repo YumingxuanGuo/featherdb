@@ -19,24 +19,24 @@ impl<T: SqlTxn> FilterExec<T> {
 impl<T: SqlTxn> Executor<T> for FilterExec<T> {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet> {
         match self.source.execute(txn)? {
-            ResultSet::Query { columns, rows, buffered_rows } => {
+            ResultSet::Query { columns, buffered_rows } => {
                 let predicate = self.predicate;
                 let predicate_buffered = predicate.clone();
                 Ok(ResultSet::Query {
                     columns,
-                    rows: Box::new(rows.filter_map(move |r| {
-                        r.and_then(|row| match predicate.evaluate(Some(&row))? {
-                            Value::Boolean(true) => Ok(Some(row)),
-                            Value::Boolean(false) => Ok(None),
-                            Value::Null => Ok(None),
-                            value => Err(Error::Value(format!(
-                                "Filter returned {}, expected boolean",
-                                value
-                            ))),
-                        })
-                        .transpose()
-                    })),
-                    buffered_rows: buffered_rows
+                    // rows: Box::new(rows.filter_map(move |r| {
+                    //     r.and_then(|row| match predicate.evaluate(Some(&row))? {
+                    //         Value::Boolean(true) => Ok(Some(row)),
+                    //         Value::Boolean(false) => Ok(None),
+                    //         Value::Null => Ok(None),
+                    //         value => Err(Error::Value(format!(
+                    //             "Filter returned {}, expected boolean",
+                    //             value
+                    //         ))),
+                    //     })
+                    //     .transpose()
+                    // })),
+                    buffered_rows: buffered_rows?
                         .into_iter()
                         .filter_map(|row| match predicate_buffered.evaluate(Some(&row)) {
                             Ok(Value::Boolean(true)) => Ok(Some(row)),
@@ -47,7 +47,7 @@ impl<T: SqlTxn> Executor<T> for FilterExec<T> {
                             ))),
                             Err(e) => Err(e),
                         }.transpose())
-                        .collect::<Result<Vec<_>>>()?
+                        .collect::<Result<Vec<_>>>(),
                     })
             },
             _ => Err(Error::Internal("Unexpected result".into()))

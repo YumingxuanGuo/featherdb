@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package featherdb;
+
+service FeatherDB {
+    rpc Register (RegistrationArgs) returns (RegistrationReply);
+    rpc Execute (ExecutionArgs) returns (ExecutionReply);
+}
+
+message RegistrationArgs {
+    
+}
+
+message RegistrationReply {
+    uint64 session_id = 1;
+}
+
+message ExecutionArgs {
+    uint64 session_id = 1;
+    uint64 sequence_number = 2;
+    bytes client_request = 3;
+}
+
+message ExecutionReply {
+    bytes result = 1;
+}

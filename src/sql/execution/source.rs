@@ -23,8 +23,8 @@ impl<T: SqlTxn> Executor<T> for Scan {
         // FIXME: Try txn.scan() only once here.
         Ok(ResultSet::Query {
             columns: table.columns.iter().map(|c| ResColumn { name: Some(c.name.clone()) }).collect(),
-            rows: Box::new(txn.scan(&table.name, self.filter.clone())?),
-            buffered_rows: txn.scan(&table.name, self.filter)?.collect::<Result<_>>()?,
+            // rows: Box::new(txn.scan(&table.name, self.filter.clone())?),
+            buffered_rows: txn.scan(&table.name, self.filter)?.collect::<Result<_>>(),
         })
     }
 }
@@ -50,11 +50,11 @@ impl<T: SqlTxn> Executor<T> for KeyLookupExec {
             .keys
             .into_iter()
             .filter_map(|key| txn.read(&table.name, &key).transpose())
-            .collect::<Result<Vec<Row>>>()?;
+            .collect::<Result<Vec<Row>>>();
 
         Ok(ResultSet::Query {
             columns: table.columns.iter().map(|c| ResColumn { name: Some(c.name.clone()) }).collect(),
-            rows: Box::new(rows.clone().into_iter().map(Ok)),
+            // rows: Box::new(rows.clone().into_iter().map(Ok)),
             buffered_rows: rows,
         })
     }
