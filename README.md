@@ -1,31 +1,35 @@
 # FeatherDB
 
-Version: 0.4.0
+Version: 0.5.0
 
 ## Introduction
 
-FeatherDB is an disk-based, concurrent, transactional, relational, unreliable, centralized database management system in Rust,
+FeatherDB is an disk-based, concurrent, transactional, relational, unreliable, distributed database management system in Rust,
 written for educational purposes.
 
-## What's New: Relational Model
+## What's New: Replica Cluster
 
-In our latest release, we've introduced a relational model to FeatherDB, bringing support for SQL queries. 
-This includes basic CRUD operations as well as more advanced queries such as joins, filters, and transactions. 
-Additionally, we have included a command-line REPL client interface that connects to the FeatherDB server, allowing users to execute SQL queries and view the results.
+In the latest release, FeatherDB has utilized the Raft consensus algorithm to maintain a cluster of replica servers.
+This is a fundamental step in turning our database from a single-server system into a multi-server, distributed system. 
+This transition provides enhanced consistency and reliability to FeatherDB, ensuring a better and more robust user experience.
 
 ### Usage
 
 To start the FeatherDB server, run the following command:
 
 ```
-$ cargo run --bin server
-FeatherDB server listening on 127.0.0.1:50052
+$ ./run.sh
+|db-a|  FeatherDB server listening on 127.0.0.1:9501...
+|kv-a|  FeatherKV server listening on 127.0.0.1:9601...
+|kv-b|  FeatherKV server listening on 127.0.0.1:9602...
+|kv-c|  FeatherKV server listening on 127.0.0.1:9603...
 ```
 
-To connect to the server, run the following command in a new shell:
+Now there are three FeatherKV servers running in the background, and one FeatherDB server running in the foreground.
+Users can connect to the FeatherDB server and execute SQL queries by running the following command in a new shell:
 
 ```
-$ cargo run --bin client
+$ cargo run --bin client_db
 Connected to featherDB. Enter !help for instructions.
 featherDB>
 ```
@@ -33,6 +37,8 @@ featherDB>
 You can now execute SQL queries in the client shell. For example:
 
 ```
+featherDB> BEGIN;
+  Began transaction 1
 featherDB> CREATE TABLE my_table (id INTEGER PRIMARY KEY, name STRING);
   Created table my_table
 featherDB> INSERT INTO my_table (id, name) VALUES (1, 'Gman'), (2, 'Alex');
@@ -48,7 +54,15 @@ featherDB> DELETE FROM my_table WHERE id = 2;
   Deleted 1 rows
 featherDB> SELECT * FROM my_table;
   1|Gman
+featherDB> COMMIT;
+  Committed transaction 1
 ```
+
+## Relational Model
+
+FeatherDB has introduced a relational model, supporting for SQL queries. 
+This includes basic CRUD operations as well as more advanced queries such as joins, filters, and transactions. 
+Additionally, we have included a command-line REPL client interface that connects to the FeatherDB server, allowing users to execute SQL queries and view the results.
 
 ### Relational Model Breakdown
 
@@ -133,11 +147,13 @@ enabling efficient key-range traversals and laying the foundation for potential 
 
 We're constantly working to improve FeatherDB and have several exciting developments planned for the near future and beyond:
 
+* Separation of SQL and storage: We're working on dividing the project into two layers for a clearer architecture and better modularity: FeatherDB for the SQL layer, and FeatherKV for the storage layer.
+
 * Advanced SQL Queries: We're working on adding support for more advanced SQL queries, such as aggregations, projections, and limits, to enhance the capabilities of FeatherDB.
 
 * Advanced SQL Optimizations: We're also focusing on implementing more advanced SQL optimizations, including `IndexLookup`, `NoopCleaner`, and `JoinType`, to improve query performance and efficiency.
 
-* Distributed System: To expand FeatherDB's capabilities in distributed environments, we're developing a Raft-based distributed consensus engine for linearizable state machine replication. This will allow FeatherDB to better handle distributed workloads and improve reliability and fault tolerance.
+* Data Sharding: To improve scalability, we will introduce sharding to distribute data across multiple nodes, allowing FeatherDB to handle larger datasets.
 
 In the longer term, we have the following enhancements in mind:
 
@@ -146,7 +162,5 @@ In the longer term, we have the following enhancements in mind:
 * Leveled Compaction: As an essential part of the LSM-tree, we will implement level compaction to minimize storage overhead for outdated and deleted entries, optimizing storage utilization.
 
 * Bloom Filter: To enhance key searching performance, we will incorporate Bloom filters as an optimization technique, reducing unnecessary disk I/O operations.
-
-* Sharding: To improve scalability, we will introduce sharding to distribute data across multiple nodes, allowing FeatherDB to handle larger datasets.
 
 Stay tuned for these upcoming features and improvements in FeatherDB. Be sure to follow our GitHub repository to stay up-to-date with our latest developments and releases.
